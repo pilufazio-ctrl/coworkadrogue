@@ -2536,29 +2536,40 @@ function initPlanoListeners(){
 // ── SUPABASE ──
 const SUPA_URL = 'https://rpdfcytrkrmmocnwiecq.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJwZGZjeXRya3JtbW9jbndpZWNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NzgwNzQsImV4cCI6MjA5NjI1NDA3NH0.h0aR1Y4_eQLtK3Yiwdzt9BbMFUz6c60J-9iNkFNKDYk';
-const SUPA_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJwZGZjeXRya3JtbW9jbndpZWNxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDY3ODA3NCwiZXhwIjoyMDk2MjU0MDc0fQ.6YCVZ3jOi7JmFuAdvrkTG3pE2-d3RkQ_M7C0aYYYaGs';
+const SUPA_SERVICE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJwZGZjeXRya3JtbW9jbndpZWNxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDY3ODA3NCwiZXhwIjoyMDk2MjU0MDc0fQ.6YCVZ3jOi7JmFuAdvrkTG3pE2-d3RkQ_M7C0aYYYaGs';
 
+// UN SOLO cliente para auth + datos
 const supa = supabase.createClient(SUPA_URL, SUPA_KEY, {
-  auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:false }
+  auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:false,
+    storage: window.localStorage }
 });
-const supaAdmin = supabase.createClient(SUPA_URL, SUPA_SERVICE_KEY, {
-  auth: { persistSession:false, autoRefreshToken:false }
+
+// Cliente separado para operaciones de datos (usa service key, sin auth storage)
+const db = supabase.createClient(SUPA_URL, SUPA_SERVICE, {
+  auth: { persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
 });
+
 let supaSession = null;
 
 async function initApp(){
-  const loginEl=document.getElementById('login-screen');
-  const appEl=document.getElementById('app');
-  const {data:{session}} = await supa.auth.getSession();
-  if(session){
-    supaSession=session;
-    if(loginEl) loginEl.style.display='none';
-    if(appEl) appEl.style.display='flex';
-    await cargarDatosIniciales();
-    render();
-  } else {
+  const loginEl = document.getElementById('login-screen');
+  const appEl   = document.getElementById('app');
+  try{
+    const { data:{session} } = await supa.auth.getSession();
+    if(session){
+      supaSession = session;
+      if(loginEl) loginEl.style.display='none';
+      if(appEl)   appEl.style.display='flex';
+      await cargarDatosIniciales();
+      render();
+    } else {
+      if(loginEl) loginEl.style.display='flex';
+      if(appEl)   appEl.style.display='none';
+    }
+  }catch(e){
+    console.error('initApp error:',e);
     if(loginEl) loginEl.style.display='flex';
-    if(appEl) appEl.style.display='none';
+    if(appEl)   appEl.style.display='none';
   }
   supa.auth.onAuthStateChange((event,session)=>{
     supaSession=session;
@@ -2571,10 +2582,13 @@ async function doLogin(){
   const pass=document.getElementById('login-pass').value;
   const btn=document.getElementById('login-btn');
   if(!email||!pass){showLoginError('Completá email y contraseña.');return;}
-  btn.disabled=true;btn.textContent='Ingresando...';
+  btn.disabled=true; btn.textContent='Ingresando...';
   document.getElementById('login-error').style.display='none';
   const {data,error}=await supa.auth.signInWithPassword({email,password:pass});
-  if(error){showLoginError('Email o contraseña incorrectos.');btn.disabled=false;btn.textContent='Ingresar';return;}
+  if(error){
+    showLoginError('Email o contraseña incorrectos.');
+    btn.disabled=false; btn.textContent='Ingresar'; return;
+  }
   supaSession=data.session;
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='flex';
@@ -2582,7 +2596,10 @@ async function doLogin(){
   render();
 }
 
-function showLoginError(msg){const e=document.getElementById('login-error');e.textContent=msg;e.style.display='block';}
+function showLoginError(msg){
+  const e=document.getElementById('login-error');
+  e.textContent=msg; e.style.display='block';
+}
 
 document.addEventListener('DOMContentLoaded',function(){
   ['login-email','login-pass'].forEach(id=>{
@@ -2591,45 +2608,56 @@ document.addEventListener('DOMContentLoaded',function(){
   });
 });
 
-async function cerrarSesion(){await supa.auth.signOut();location.reload();}
+async function cerrarSesion(){
+  await supa.auth.signOut(); location.reload();
+}
 
+// ── CARGAR DATOS (usa db = service role) ──
 async function cargarDatosIniciales(){
   try{
-    const [rMovs,rClis,rConts,rOcups]=await Promise.all([
-      supaAdmin.from('movimientos').select('*').order('fecha',{ascending:false}),
-      supaAdmin.from('clientes').select('*').order('nombre'),
-      supaAdmin.from('contratos').select('*'),
-      supaAdmin.from('ocupaciones').select('*'),
+    const [rMovs,rClis,rConts,rOcups] = await Promise.all([
+      db.from('movimientos').select('*').order('fecha',{ascending:false}),
+      db.from('clientes').select('*').order('nombre'),
+      db.from('contratos').select('*'),
+      db.from('ocupaciones').select('*'),
     ]);
-    if(rMovs.error) console.error('movs:',rMovs.error);
-    if(rClis.error) console.error('clis:',rClis.error);
-    if(rMovs.data&&rMovs.data.length) movs=rMovs.data.map(dbToMov);
+    if(rMovs.error)  console.error('movs:',rMovs.error);
+    if(rClis.error)  console.error('clis:',rClis.error);
+    if(rConts.error) console.error('conts:',rConts.error);
+    if(rOcups.error) console.error('ocups:',rOcups.error);
+    if(rMovs.data  && rMovs.data.length)  movs=rMovs.data.map(dbToMov);
     if(rClis.data){
       clientes=rClis.data.map(dbToCli);
-      if(rConts.data) clientes.forEach(cli=>{cli.contratos=rConts.data.filter(ct=>ct.cliente_id===cli.id).map(dbToCont);});
+      if(rConts.data) clientes.forEach(cli=>{
+        cli.contratos=rConts.data.filter(ct=>ct.cliente_id===cli.id).map(dbToCont);
+      });
     }
-    if(rOcups.data&&rOcups.data.length) espacios.forEach(esp=>{esp.ocupaciones=rOcups.data.filter(o=>o.espacio_id===esp.id).map(dbToOcup);});
+    if(rOcups.data && rOcups.data.length) espacios.forEach(esp=>{
+      esp.ocupaciones=rOcups.data.filter(o=>o.espacio_id===esp.id).map(dbToOcup);
+    });
   }catch(e){console.error('Error cargando:',e);}
 }
 
-function dbToMov(r){return {id:r.id,_dbId:r.id,fecha:r.fecha,tipo:r.tipo,ab:r.ab||'A',moneda:r.moneda||'ARS',cat:r.cat||'',detalle:r.detalle||'',cliente:r.cliente||'',monto:r.monto||0,medio:r.medio||'',cuenta:r.cuenta||'',comp:r.comp||'',drive:r.drive||'',notas:r.notas||'',espacioId:r.espacio_id||null,conciliado:r.conciliado||false};}
-function dbToCli(r){return {id:r.id,_dbId:r.id,nombre:r.nombre,empresa:r.empresa||'',tel:r.telefono||'',email:r.email||'',estado:r.estado||'Activo',obs:r.obs||'',contratos:[]};}
-function dbToCont(r){return {id:r.id,_dbId:r.id,clienteId:r.cliente_id,servicio:r.servicio||'',modalidad:r.modalidad||'',detalle:r.detalle||'',frecuencia:r.frecuencia||'',inicio:r.inicio||'',vencimiento:r.vencimiento||'',importe:r.importe||0,moneda:r.moneda||'ARS',renovAuto:r.renov_auto,proxCobro:r.prox_cobro||'',estado:r.estado||'Activo',espacioId:r.espacio_id||null,historial:[]};}
-function dbToOcup(r){return {id:r.id,_dbId:r.id,clienteId:r.cliente_id,plan:r.plan||'',modalidad:r.modalidad||'Mensual',diasSemana:r.dias_semana||[],fijo:r.fijo!==false,moneda:r.moneda||'ARS',importe:r.importe||0,inicio:r.inicio||'',vencimiento:r.vencimiento||null,renovAuto:r.renov_auto!==false,espacioId:r.espacio_id};}
+// ── MAPPERS ──
+function dbToMov(r){return{id:r.id,_dbId:r.id,fecha:r.fecha,tipo:r.tipo,ab:r.ab||'A',moneda:r.moneda||'ARS',cat:r.cat||'',detalle:r.detalle||'',cliente:r.cliente||'',monto:r.monto||0,medio:r.medio||'',cuenta:r.cuenta||'',comp:r.comp||'',drive:r.drive||'',notas:r.notas||'',espacioId:r.espacio_id||null,conciliado:r.conciliado||false};}
+function dbToCli(r){return{id:r.id,_dbId:r.id,nombre:r.nombre,empresa:r.empresa||'',tel:r.telefono||'',email:r.email||'',estado:r.estado||'Activo',obs:r.obs||'',contratos:[]};}
+function dbToCont(r){return{id:r.id,_dbId:r.id,clienteId:r.cliente_id,servicio:r.servicio||'',modalidad:r.modalidad||'',detalle:r.detalle||'',frecuencia:r.frecuencia||'',inicio:r.inicio||'',vencimiento:r.vencimiento||'',importe:r.importe||0,moneda:r.moneda||'ARS',renovAuto:r.renov_auto,proxCobro:r.prox_cobro||'',estado:r.estado||'Activo',espacioId:r.espacio_id||null,historial:[]};}
+function dbToOcup(r){return{id:r.id,_dbId:r.id,clienteId:r.cliente_id,plan:r.plan||'',modalidad:r.modalidad||'Mensual',diasSemana:r.dias_semana||[],fijo:r.fijo!==false,moneda:r.moneda||'ARS',importe:r.importe||0,inicio:r.inicio||'',vencimiento:r.vencimiento||null,renovAuto:r.renov_auto!==false,espacioId:r.espacio_id};}
 
+// ── ESCRITURA (usa db = service role) ──
 async function guardarMovEnSupa(mov){
   const p={fecha:mov.fecha||null,tipo:mov.tipo,ab:mov.ab||'A',moneda:mov.moneda||'ARS',cat:mov.cat||null,detalle:mov.detalle||null,cliente:mov.cliente||null,monto:Number(mov.monto)||0,medio:mov.medio||null,cuenta:mov.cuenta||null,comp:mov.comp||null,drive:mov.drive||null,notas:mov.notas||null,espacio_id:mov.espacioId||null,conciliado:mov.conciliado||false};
-  const {data,error}=await supaAdmin.from('movimientos').insert(p).select().single();
+  const {data,error}=await db.from('movimientos').insert(p).select().single();
   if(error){console.error('Error mov:',error);return;}
   if(data){mov.id=data.id;mov._dbId=data.id;}
 }
 
 async function guardarClienteEnSupa(cli){
   if(cli._dbId){
-    await supaAdmin.from('clientes').update({nombre:cli.nombre,empresa:cli.empresa||null,telefono:cli.tel||null,email:cli.email||null,estado:cli.estado||'Activo',obs:cli.obs||null}).eq('id',cli._dbId);
+    await db.from('clientes').update({nombre:cli.nombre,empresa:cli.empresa||null,telefono:cli.tel||null,email:cli.email||null,estado:cli.estado||'Activo',obs:cli.obs||null}).eq('id',cli._dbId);
     return {id:cli._dbId};
   }
-  const {data,error}=await supaAdmin.from('clientes').insert({nombre:cli.nombre,empresa:cli.empresa||null,telefono:cli.tel||null,email:cli.email||null,estado:cli.estado||'Activo',obs:cli.obs||null}).select().single();
+  const {data,error}=await db.from('clientes').insert({nombre:cli.nombre,empresa:cli.empresa||null,telefono:cli.tel||null,email:cli.email||null,estado:cli.estado||'Activo',obs:cli.obs||null}).select().single();
   if(error){console.error('Error cli:',error);return null;}
   if(data){cli._dbId=data.id;cli.id=data.id;}
   return data;
@@ -2637,28 +2665,28 @@ async function guardarClienteEnSupa(cli){
 
 async function guardarContratoEnSupa(ct,clienteId){
   const p={cliente_id:clienteId,servicio:ct.servicio||null,modalidad:ct.modalidad||null,detalle:ct.detalle||null,frecuencia:ct.frecuencia||null,inicio:ct.inicio||null,vencimiento:ct.vencimiento||null,importe:Number(ct.importe)||0,moneda:ct.moneda||'ARS',renov_auto:ct.renovAuto!==false,prox_cobro:ct.proxCobro||null,estado:ct.estado||'Activo',espacio_id:ct.espacioId||null};
-  if(ct._dbId){await supaAdmin.from('contratos').update(p).eq('id',ct._dbId);return;}
-  const {data,error}=await supaAdmin.from('contratos').insert(p).select().single();
+  if(ct._dbId){await db.from('contratos').update(p).eq('id',ct._dbId);return;}
+  const {data,error}=await db.from('contratos').insert(p).select().single();
   if(error){console.error('Error cont:',error);return;}
   if(data){ct._dbId=data.id;ct.id=data.id;}
 }
 
 async function guardarOcupEnSupa(oc,espId){
   const p={espacio_id:espId,cliente_id:oc.clienteId||null,plan:oc.plan||null,modalidad:oc.modalidad||'Mensual',dias_semana:oc.diasSemana||[],fijo:oc.fijo!==false,moneda:oc.moneda||'ARS',importe:Number(oc.importe)||0,inicio:oc.inicio||null,vencimiento:oc.vencimiento||null,renov_auto:oc.renovAuto!==false};
-  if(oc._dbId){await supaAdmin.from('ocupaciones').update(p).eq('id',oc._dbId);return;}
-  const {data,error}=await supaAdmin.from('ocupaciones').insert(p).select().single();
+  if(oc._dbId){await db.from('ocupaciones').update(p).eq('id',oc._dbId);return;}
+  const {data,error}=await db.from('ocupaciones').insert(p).select().single();
   if(error){console.error('Error ocup:',error);return;}
   if(data){oc._dbId=data.id;oc.id=data.id;}
 }
 
 async function actualizarClienteEstadoEnSupa(cliId,estado){
   const cli=clientes.find(c=>c.id===cliId);
-  if(cli&&cli._dbId) await supaAdmin.from('clientes').update({estado}).eq('id',cli._dbId);
+  if(cli&&cli._dbId) await db.from('clientes').update({estado}).eq('id',cli._dbId);
 }
 
 async function borrarMovEnSupa(id){
   const mov=movs.find(m=>m.id===id);
-  if(mov&&mov._dbId) await supaAdmin.from('movimientos').delete().eq('id',mov._dbId);
+  if(mov&&mov._dbId) await db.from('movimientos').delete().eq('id',mov._dbId);
 }
 
 /* ── BOOT ── */
