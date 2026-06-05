@@ -772,19 +772,29 @@ function switchCxTab(t){
   });
 }
 
-function conciliar(id){
+async function conciliar(id){
   const m=movs.find(m=>m.id===id);if(!m)return;
   m.conciliado=true;
   histConcil.unshift({movId:id,fechaAccion:todayStr(),cliente:m.cliente,detalle:m.detalle,cuenta:m.cuenta,tipo:m.tipo,monto:m.monto,accion:'conciliado'});
-  if(m._dbId) db.from('movimientos').update({conciliado:true}).eq('id',m._dbId);
+  const dbId = m._dbId||m.id;
+  if(dbId){
+    const {error} = await db.from('movimientos').update({conciliado:true}).eq('id',dbId);
+    if(error) console.error('Error conciliando:',error);
+    else console.log('Conciliado OK, id:',dbId);
+  }
   render();
 }
 
-function reabrirConcil(movId){
+async function reabrirConcil(movId){
   const m=movs.find(m=>m.id===movId);if(!m)return;
   m.conciliado=false;
   histConcil.unshift({movId,fechaAccion:todayStr(),cliente:m.cliente,detalle:m.detalle,cuenta:m.cuenta,tipo:m.tipo,monto:m.monto,accion:'reabierto'});
-  if(m._dbId) db.from('movimientos').update({conciliado:false}).eq('id',m._dbId);
+  const dbId = m._dbId||m.id;
+  if(dbId){
+    const {error} = await db.from('movimientos').update({conciliado:false}).eq('id',dbId);
+    if(error) console.error('Error reabriendo:',error);
+    else console.log('Reabierto OK, id:',dbId);
+  }
   render();setTimeout(()=>switchCxTab('pend'),50);
 }
 
@@ -2626,7 +2636,8 @@ async function actualizarClienteEstadoEnSupa(cliId,estado){
 
 async function borrarMovEnSupa(id){
   const mov=movs.find(m=>m.id===id);
-  if(mov&&mov._dbId) await db.from('movimientos').delete().eq('id',mov._dbId);
+  const dbId = mov?(mov._dbId||mov.id):id;
+  if(dbId) await db.from('movimientos').delete().eq('id',dbId);
 }
 
 /* ── BOOT ── */
