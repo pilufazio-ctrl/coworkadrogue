@@ -429,20 +429,9 @@ const CUENTAS=[
   {nombre:'Caja USD',moneda:'USD',color:'#b87213',icono:'ti-currency-dollar',desc:'Efectivo en dólares'},
 ];
 
-const MOVS_INIT=[
-  {id:1,fecha:'2026-05-20',tipo:'ingreso',ab:'A',cat:'Oficina',detalle:'Oficina 4 mensual',cliente:'Empresa Ejemplo S.A.',monto:180000,moneda:'ARS',medio:'Transferencia',cuenta:'Banco Santander',comp:'FC 0001',drive:'',conciliado:true},
-  {id:2,fecha:'2026-05-18',tipo:'ingreso',ab:'A',cat:'Comunitario',detalle:'Membresía mayo',cliente:'Juan Pérez',monto:55000,moneda:'ARS',medio:'Transferencia',cuenta:'Banco Santander',comp:'FC 0002',drive:'',conciliado:false},
-  {id:3,fecha:'2026-05-17',tipo:'egreso',ab:'A',cat:'Sueldos',detalle:'Sueldo mayo',cliente:'María González',monto:120000,moneda:'ARS',medio:'Efectivo',cuenta:'Caja física',comp:'REC 001',drive:'',conciliado:true},
-  {id:4,fecha:'2026-05-15',tipo:'ingreso',ab:'A',cat:'Sala de Reuniones',detalle:'3 horas sala',cliente:'Consultora XYZ',monto:24000,moneda:'ARS',medio:'Efectivo',cuenta:'Caja física',comp:'FC 0003',drive:'',conciliado:false},
-  {id:5,fecha:'2026-05-14',tipo:'egreso',ab:'A',cat:'Luz',detalle:'Factura luz mayo',cliente:'EDESUR',monto:28000,moneda:'ARS',medio:'Débito',cuenta:'Banco Santander',comp:'FAC-4821',drive:'',conciliado:true},
-  {id:6,fecha:'2026-05-12',tipo:'ingreso',ab:'B',cat:'Comunitario',detalle:'Pase día completo',cliente:'Laura Fernández',monto:8000,moneda:'ARS',medio:'Efectivo',cuenta:'Caja física',comp:'',drive:'',conciliado:false},
-  {id:7,fecha:'2026-05-10',tipo:'ingreso',ab:'A',cat:'Alquiler Local',detalle:'Alquiler local mayo',cliente:'Dewey Brewing Co.',monto:310,moneda:'USD',medio:'Efectivo',cuenta:'Caja USD',comp:'FC A001',drive:'',conciliado:false},
-  {id:8,fecha:'2026-05-05',tipo:'egreso',ab:'B',cat:'Limpieza',detalle:'Insumos limpieza',cliente:'AdroWater',monto:18000,moneda:'ARS',medio:'Efectivo',cuenta:'Caja física',comp:'',drive:'',conciliado:true},
-  {id:9,fecha:'2026-05-03',tipo:'ingreso',ab:'A',cat:'Oficina',detalle:'Seña reserva oficina',cliente:'Cliente Nuevo',monto:500,moneda:'USD',medio:'Efectivo',cuenta:'Caja USD',comp:'FC A002',drive:'',conciliado:false},
-  {id:10,fecha:'2026-04-28',tipo:'egreso',ab:'A',cat:'Insumos',detalle:'Insumos cafetería',cliente:'Proveedor SA',monto:15000,moneda:'ARS',medio:'Efectivo',cuenta:'Caja física',comp:'',drive:'',conciliado:true},
-];
+const MOVS_INIT=[]
 
-let movs=[...MOVS_INIT],nextId=11;
+let movs=[],nextId=1;
 let cajaMov=[],cajaNextId=1,cajaTipo='entrada';
 let histConcil=[];
 let view='dashboard',tipoM='ingreso',abM='A',monM='ARS',editId=null;
@@ -787,7 +776,7 @@ function conciliar(id){
   const m=movs.find(m=>m.id===id);if(!m)return;
   m.conciliado=true;
   histConcil.unshift({movId:id,fechaAccion:todayStr(),cliente:m.cliente,detalle:m.detalle,cuenta:m.cuenta,tipo:m.tipo,monto:m.monto,accion:'conciliado'});
-  if(supaSession) supa.from('movimientos').update({conciliado:true}).eq('id',id);
+  if(m._dbId) db.from('movimientos').update({conciliado:true}).eq('id',m._dbId);
   render();
 }
 
@@ -795,7 +784,7 @@ function reabrirConcil(movId){
   const m=movs.find(m=>m.id===movId);if(!m)return;
   m.conciliado=false;
   histConcil.unshift({movId,fechaAccion:todayStr(),cliente:m.cliente,detalle:m.detalle,cuenta:m.cuenta,tipo:m.tipo,monto:m.monto,accion:'reabierto'});
-  if(supaSession) supa.from('movimientos').update({conciliado:false}).eq('id',movId);
+  if(m._dbId) db.from('movimientos').update({conciliado:false}).eq('id',m._dbId);
   render();setTimeout(()=>switchCxTab('pend'),50);
 }
 
@@ -1171,56 +1160,7 @@ const ESTADOS_BG = {
   Finalizado:'b-gray', Baja:'b-gray'
 };
 
-let clientes = [
-  {
-    id:1, nombre:'Juan Pérez', empresa:'Freelance', telefono:'11-4444-5555',
-    email:'juan@ejemplo.com', obs:'Puntual siempre', estado:'Activo',
-    contratos:[
-      {
-        id:'c1-1', servicio:'Espacio Comunitario', detalle:'Mensual comunal',
-        frecuencia:'Mensual', inicio:'2026-05-01', vencimiento:'2026-12-31',
-        importe:55000, moneda:'ARS', renovAuto:true, estado:'Activo',
-        proxCobro:'2026-06-01', historial:[]
-      }
-    ]
-  },
-  {
-    id:2, nombre:'Consultora XYZ', empresa:'Consultora XYZ S.A.', telefono:'11-5555-7777',
-    email:'admin@xyz.com', obs:'', estado:'Activo',
-    contratos:[
-      {
-        id:'c2-1', servicio:'Oficina Privada 4 puestos', detalle:'Oficina 4 mensual',
-        frecuencia:'Mensual', inicio:'2026-01-01', vencimiento:'2026-12-31',
-        importe:1200, moneda:'USD', renovAuto:true, estado:'Activo',
-        proxCobro:'2026-06-01', historial:[]
-      }
-    ]
-  },
-  {
-    id:3, nombre:'Brand Voice Group', empresa:'Brand Voice Group SA', telefono:'11-8888-6666',
-    email:'bvg@bvg.com', obs:'', estado:'Moroso',
-    contratos:[
-      {
-        id:'c3-1', servicio:'Sala de Reuniones', detalle:'10 horas mensuales',
-        frecuencia:'Mensual', inicio:'2026-03-01', vencimiento:'2026-09-30',
-        importe:50000, moneda:'ARS', renovAuto:false, estado:'Activo',
-        proxCobro:'2026-05-01', historial:[]
-      }
-    ]
-  },
-  {
-    id:4, nombre:'Laura Fernández', empresa:'', telefono:'11-2222-3333',
-    email:'laura@mail.com', obs:'Viene los lunes', estado:'Pendiente de Cobro',
-    contratos:[
-      {
-        id:'c4-1', servicio:'Espacio Comunitario', detalle:'1 día por semana',
-        frecuencia:'Semanal', inicio:'2026-05-01', vencimiento:'2026-07-31',
-        importe:8000, moneda:'ARS', renovAuto:false, estado:'Activo',
-        proxCobro:'2026-05-27', historial:[]
-      }
-    ]
-  }
-];
+let clientes=[]
 let cliNextId = 5;
 let ctratoNextId = 100;
 let fichaClienteId = null;
