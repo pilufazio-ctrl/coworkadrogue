@@ -440,7 +440,7 @@ let dashPeriodo='mes';
 let chartRefs={};
 
 const dc=()=>{Object.values(chartRefs).forEach(c=>{try{c.destroy()}catch(e){}});chartRefs={}};
-const sum=l=>l.reduce((s,m)=>s+m.monto,0);
+const sum=l=>l.reduce((s,m)=>s+(m.conciliado&&m.comisionBancaria>0&&m.montoNeto!=null?m.montoNeto:m.monto),0);
 const ingARS=l=>sum(l.filter(m=>m.tipo==='ingreso'&&m.moneda==='ARS'));
 const egrARS=l=>sum(l.filter(m=>m.tipo==='egreso'&&m.moneda==='ARS'));
 const ingUSD=l=>sum(l.filter(m=>m.tipo==='ingreso'&&m.moneda==='USD'));
@@ -491,13 +491,20 @@ function setActions(){
   }else{el.innerHTML='';}
 }
 
-function navGroup(grp,el){
-  const sub=document.getElementById('sub-'+grp);
-  const chev=document.getElementById('chev-'+(grp==='ingresos'?'ing':'egr'));
-  const isOpen=sub.classList.contains('open');
-  sub.classList.toggle('open',!isOpen);
-  if(chev)chev.style.transform=isOpen?'':'rotate(90deg)';
-  nav(grp,el);
+function navGroup(v, el){
+  // Toggle: if already open, collapse it
+  const subId = v==='ingresos'?'sub-ingresos':'sub-egresos';
+  const chevId = v==='ingresos'?'chev-ing':'chev-egr';
+  const sub = document.getElementById(subId);
+  const chev = document.getElementById(chevId);
+  if(sub && sub.classList.contains('open')){
+    sub.classList.remove('open');
+    if(chev) chev.style.transform='rotate(0deg)';
+  } else {
+    if(sub) sub.classList.add('open');
+    if(chev) chev.style.transform='rotate(90deg)';
+    nav(v, el);
+  }
 }
 
 function nav(v,el){
@@ -684,9 +691,14 @@ function vMovPage(tipo,abF){
       <span class="count-lbl">${fil.length} registros</span>
       <button class="btn ${isIng?'btn-green':'btn-red'}" onclick="openModal('${tipo}','${abF||'A'}')"><i class="ti ti-plus"></i>Nuevo ${isIng?'ingreso':'egreso'}</button>
     </div>
+    ${selMovIds.size>0?`<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#FDF3DC;border-radius:7px;margin-bottom:8px;border:1px solid #C07B10">
+      <span style="font-size:13px;font-weight:600;color:#7A4A06">${selMovIds.size} movimiento${selMovIds.size!==1?'s':''} seleccionado${selMovIds.size!==1?'s':''}</span>
+      <button class="btn btn-red btn-sm" onclick="borrarSeleccionados()"><i class="ti ti-trash"></i> Eliminar seleccionados</button>
+      <button class="btn btn-ghost btn-sm" onclick="limpiarSeleccion()">Cancelar</button>
+    </div>`:''}
     ${fil.length===0?emptyBox(isIng?'ti-arrow-up-right':'ti-arrow-down-left',`Sin ${isIng?'ingresos':'egresos'}${abF?' ('+abF+')':''}`,`Usá el botón para agregar.`):`
-    <div class="tbl-wrap"><table><thead><tr><th style="width:96px">Fecha</th><th style="width:34px">A/B</th><th>${isIng?'Cliente':'Proveedor'}</th><th>Categoría</th><th>Detalle</th><th style="width:90px">Medio</th><th style="width:100px">Cuenta</th><th style="width:80px">Comp.</th><th style="width:34px">$</th><th style="text-align:right;width:120px">Monto</th><th style="width:60px"></th></tr></thead>
-    <tbody>${fil.map(m=>`<tr class="${m.moneda==='USD'?'r-usd':isIng?'r-ing':'r-egr'}"><td style="color:var(--ink3);font-size:12px">${m.fecha}</td><td>${abB(m.ab)}</td><td style="font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.cliente}</td><td><span class="badge b-gray">${m.cat}</span></td><td style="color:var(--ink2);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${m.detalle}</td><td style="font-size:12px;color:var(--ink2)">${m.medio}</td><td style="font-size:12px;color:var(--ink3)">${m.cuenta}</td><td style="font-size:11px;color:var(--ink3)">${m.drive?`<a href="${m.drive}" target="_blank" style="color:var(--blue);text-decoration:none"><i class="ti ti-link"></i> Drive</a>`:m.comp||'—'}</td><td>${m.moneda==='USD'?`<span class="badge b-usd">USD</span>`:''}</td><td style="text-align:right;font-weight:600" class="${m.moneda==='USD'?'usd-c':isIng?'pos':'neg'}">${m.moneda==='USD'?fmtUSD(m.monto):(isIng?'+':'−')+fmtARS(m.monto)}</td><td style="display:flex;gap:3px"><button class="btn btn-ghost btn-sm" onclick="openEdit(${m.id})" title="Editar"><i class="ti ti-pencil"></i></button><button class="btn btn-ghost btn-sm" onclick="borrar(${m.id})" title="Eliminar"><i class="ti ti-trash"></i></button></td></tr>`).join('')}
+    <div class="tbl-wrap"><table><thead><tr><th style="width:28px"><input type="checkbox" id="chk-all" onchange="toggleTodosMovs(this)" style="width:14px;height:14px"/></th><th style="width:96px">Fecha</th><th style="width:34px">A/B</th><th>${isIng?'Cliente':'Proveedor'}</th><th>Categoría</th><th>Detalle</th><th style="width:90px">Medio</th><th style="width:100px">Cuenta</th><th style="width:80px">Comp.</th><th style="width:34px">$</th><th style="text-align:right;width:120px">Monto</th><th style="width:60px"></th></tr></thead>
+    <tbody>${fil.map(m=>`<tr class="${m.moneda==='USD'?'r-usd':isIng?'r-ing':'r-egr'}"><td><input type="checkbox" onchange="toggleSelMov(${m.id},this)" style="width:14px;height:14px"/></td><td style="color:var(--ink3);font-size:12px">${m.fecha}</td><td>${abB(m.ab)}</td><td style="font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.cliente}</td><td><span class="badge b-gray">${m.cat}</span></td><td style="color:var(--ink2);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${m.detalle}</td><td style="font-size:12px;color:var(--ink2)">${m.medio}</td><td style="font-size:12px;color:var(--ink3)">${m.cuenta}</td><td style="font-size:11px;color:var(--ink3)">${m.drive?`<a href="${m.drive}" target="_blank" style="color:var(--blue);text-decoration:none"><i class="ti ti-link"></i> Drive</a>`:m.comp||'—'}</td><td>${m.moneda==='USD'?`<span class="badge b-usd">USD</span>`:''}</td><td style="text-align:right;font-weight:600" class="${m.moneda==='USD'?'usd-c':isIng?'pos':'neg'}">${m.moneda==='USD'?fmtUSD(m.monto):(isIng?'+':'−')+fmtARS(m.monto)}</td><td style="display:flex;gap:3px"><button class="btn btn-ghost btn-sm" onclick="openEdit(${m.id})" title="Editar"><i class="ti ti-pencil"></i></button><button class="btn btn-ghost btn-sm" onclick="borrar(${m.id})" title="Eliminar"><i class="ti ti-trash"></i></button></td></tr>`).join('')}
     </tbody></table></div>`}
   </div>`;
 }
@@ -720,7 +732,28 @@ function vCuentas(){
   </div>
   <div style="font-size:10px;font-weight:600;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px">Cuenta en dólares (USD)</div>
   ${(()=>{const s=saldoCta('Caja USD');const ent=sum(movs.filter(m=>m.cuenta==='Caja USD'&&m.tipo==='ingreso'));const sal=sum(movs.filter(m=>m.cuenta==='Caja USD'&&m.tipo==='egreso'));return`<div class="card" style="border-top:3px solid var(--amber);margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><div><div style="font-size:14px;font-weight:600">Caja USD</div><div style="font-size:11px;color:var(--ink3);margin-top:2px">Efectivo en dólares — sin conversión automática</div></div><div style="width:38px;height:38px;border-radius:10px;background:var(--amber-bg);display:flex;align-items:center;justify-content:center"><i class="ti ti-currency-dollar" style="font-size:18px;color:var(--amber)"></i></div></div><div style="font-size:30px;font-weight:600;letter-spacing:-.8px;color:${s>=0?'var(--amber)':'var(--red)'};margin-bottom:14px">${s>=0?'':'-'}${fmtUSD(Math.abs(s))}</div><div style="display:flex;gap:12px;padding-top:12px;border-top:1px solid var(--bdr)"><div style="flex:1"><div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Entradas</div><div style="font-size:13px;font-weight:600;color:var(--amber)">+${fmtUSD(ent)}</div></div><div style="flex:1"><div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Salidas</div><div style="font-size:13px;font-weight:600" class="neg">−${fmtUSD(sal)}</div></div><div style="flex:1"><div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Movimientos</div><div style="font-size:13px;font-weight:600">${movs.filter(m=>m.cuenta==='Caja USD').length}</div></div></div></div>`;})()}
-  <div class="note"><i class="ti ti-info-circle"></i><span>Para cambiar dólares a pesos: cargá un <strong>egreso en Caja USD</strong> y un <strong>ingreso en Caja física</strong> con el tipo de cambio del día.</span></div>`;
+  <div class="note"><i class="ti ti-info-circle"></i><span>Para cambiar dólares a pesos: cargá un <strong>egreso en Caja USD</strong> y un <strong>ingreso en Caja física</strong> con el tipo de cambio del día.</span></div>
+
+  ${(()=>{
+    const movsConCom = movs.filter(m=>m.conciliado && m.comisionBancaria>0);
+    if(!movsConCom.length) return '';
+    const totalCom = movsConCom.reduce((s,m)=>s+(m.comisionBancaria||0),0);
+    return '<div class="card" style="margin-top:16px;border-left:3px solid var(--amber)">'
+      +'<div style="font-size:10px;font-weight:600;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px"><i class="ti ti-percentage" style="margin-right:4px;color:var(--amber)"></i>Comisiones bancarias / tarjeta</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bdr);margin-bottom:8px">'
+      +'<span style="font-size:13px;color:var(--ink2)">Total comisiones cobradas</span>'
+      +'<span style="font-size:16px;font-weight:700;color:var(--amber)">- '+fmtARS(totalCom)+'</span></div>'
+      +'<table style="width:100%;font-size:12px;border-collapse:collapse">'
+      +'<thead><tr style="color:var(--ink3)"><th style="text-align:left;padding:4px 0">Fecha</th><th style="text-align:left;padding:4px">Detalle</th><th style="text-align:left">Cuenta</th><th style="text-align:right">Comisión</th><th style="text-align:right">Neto</th></tr></thead>'
+      +'<tbody>'+movsConCom.map(m=>'<tr style="border-top:1px solid var(--bdr2)">'
+        +'<td style="padding:5px 0;color:var(--ink3)">'+m.fecha+'</td>'
+        +'<td style="padding:5px 4px">'+(m.cliente||m.detalle||'—')+'</td>'
+        +'<td style="padding:5px 4px;color:var(--ink3)">'+(m.cuenta||'—')+'</td>'
+        +'<td style="padding:5px 0;text-align:right;color:var(--red)">- '+fmtARS(m.comisionBancaria||0)+'</td>'
+        +'<td style="padding:5px 0;text-align:right;font-weight:600;color:var(--green-d)">'+fmtARS(m.montoNeto||0)+'</td>'
+      +'</tr>').join('')+'</tbody></table></div>';
+  })()}
+  `;
 }
 
 /* ── CONCILIACIÓN ── */
@@ -744,7 +777,7 @@ function vConcil(){
       const pendCta=pend.filter(m=>m.cuenta===cta);if(!pendCta.length)return'';
       const co=CUENTAS.find(c=>c.nombre===cta);const color=co?co.color:'#1a63b0';
       return`<div class="card" style="margin-bottom:14px;border-top:2px solid ${color}"><div class="card-hd" style="margin-bottom:12px"><span style="display:flex;align-items:center;gap:8px"><span style="width:9px;height:9px;border-radius:50%;background:${color}"></span>${cta}</span><span style="font-size:11px;color:var(--ink3);font-weight:400;text-transform:none;letter-spacing:0">${pendCta.length} pendiente${pendCta.length!==1?'s':''}</span></div>
-      ${pendCta.map(m=>`<div class="cx-item" id="cxi-${m.id}"><div class="cx-dot" style="background:#EF9F27;margin-top:6px"></div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.cliente}</span><span style="font-size:11px;color:var(--ink3);flex-shrink:0;margin-left:8px">${m.fecha}</span></div><div style="font-size:12px;color:var(--ink2);margin-bottom:4px">${m.cat} — ${m.detalle}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${abB(m.ab)}<span class="badge b-gray">${m.medio}</span>${m.comp?`<span style="font-size:11px;color:var(--ink3)">${m.comp}</span>`:''}</div></div><div style="text-align:right;flex-shrink:0;margin-left:14px;display:flex;flex-direction:column;align-items:flex-end;gap:6px"><div style="font-size:14px;font-weight:600" class="${m.moneda==='USD'?'usd-c':m.tipo==='ingreso'?'pos':'neg'}">${m.moneda==='USD'?fmtUSD(m.monto):(m.tipo==='ingreso'?'+':'−')+fmtARS(m.monto)}</div><button class="btn btn-primary btn-sm" onclick="conciliar(${m.id})"><i class="ti ti-check"></i>Conciliar</button></div></div>`).join('')}
+      ${pendCta.map(m=>`<div class="cx-item" id="cxi-${m.id}"><div class="cx-dot" style="background:#EF9F27;margin-top:6px"></div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.cliente}</span><span style="font-size:11px;color:var(--ink3);flex-shrink:0;margin-left:8px">${m.fecha}</span></div><div style="font-size:12px;color:var(--ink2);margin-bottom:4px">${m.cat} — ${m.detalle}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${abB(m.ab)}<span class="badge b-gray">${m.medio}</span>${m.comp?`<span style="font-size:11px;color:var(--ink3)">${m.comp}</span>`:''}</div></div><div style="text-align:right;flex-shrink:0;margin-left:14px;display:flex;flex-direction:column;align-items:flex-end;gap:6px"><div style="font-size:14px;font-weight:600" class="${m.moneda==='USD'?'usd-c':m.tipo==='ingreso'?'pos':'neg'}">${m.moneda==='USD'?fmtUSD(m.monto):(m.tipo==='ingreso'?'+':'−')+fmtARS(m.monto)}</div><button class="btn btn-primary btn-sm" onclick="openConcilModal(${m.id})"><i class="ti ti-check"></i>Conciliar</button><button class="btn btn-ghost btn-sm" onclick="eliminarMovConcil(${m.id})" title="Eliminar"><i class="ti ti-trash"></i></button></div></div>`).join('')}
       </div>`;
     }).join('')}
     ${pend.length===0?`<div class="card">${emptyBox('ti-circle-check','Todo conciliado','No hay movimientos pendientes')}</div>`:''}
@@ -772,6 +805,93 @@ function switchCxTab(t){
   });
 }
 
+
+function openConcilModal(id){
+  const m=movs.find(mv=>mv.id===id); if(!m) return;
+  const esTarjeta = m.medio && (m.medio.toLowerCase().includes('crédit') || m.medio.toLowerCase().includes('credit') || m.medio.toLowerCase().includes('débit') || m.medio.toLowerCase().includes('debit') || m.medio.toLowerCase().includes('tarjeta') || m.medio.toLowerCase().includes('getnet') || m.medio.toLowerCase().includes('mercado'));
+  document.getElementById('modal-root').innerHTML=`
+  <div class="modal-back" id="mover" onclick="if(event.target.id==='mover')closeModal()">
+    <div class="modal-box narrow">
+      <div class="modal-hd" style="color:var(--blue)">
+        <span><i class="ti ti-check" style="margin-right:6px"></i>Conciliar movimiento</span>
+        <button class="btn btn-ghost btn-sm" onclick="closeModal()" style="padding:4px 8px"><i class="ti ti-x"></i></button>
+      </div>
+      <div style="background:var(--surf2);border-radius:var(--rsm);padding:10px 14px;margin-bottom:14px;font-size:13px">
+        <div style="font-weight:600">${m.cliente||'Sin nombre'}</div>
+        <div style="color:var(--ink3);font-size:12px">${m.detalle||m.cat} · ${m.medio||''} · ${m.moneda==='USD'?fmtUSD(m.monto):fmtARS(m.monto)}</div>
+      </div>
+      <div class="fg">
+        <label>¿Hubo comisión bancaria / de tarjeta?</label>
+        <select id="concil-tiene-com" onchange="toggleComision()">
+          <option value="no">No</option>
+          <option value="si"${esTarjeta?' selected':''}>Sí</option>
+        </select>
+      </div>
+      <div id="concil-com-wrap" style="display:${esTarjeta?'block':'none'}">
+        <div class="fg">
+          <label>Monto comisión ($)</label>
+          <input type="number" id="concil-com-monto" placeholder="0" step="0.01" value=""/>
+        </div>
+        <div class="fg">
+          <label>% comisión (opcional)</label>
+          <input type="number" id="concil-com-pct" placeholder="Ej: 3.5" step="0.01"
+            oninput="document.getElementById('concil-com-monto').value=Math.round(${m.monto}*parseFloat(this.value||0)/100)"/>
+        </div>
+        <div style="font-size:11px;color:var(--ink3);margin-top:-6px;margin-bottom:10px">
+          Ingreso neto después de comisión: <strong id="concil-neto">${m.moneda==='USD'?fmtUSD(m.monto):fmtARS(m.monto)}</strong>
+        </div>
+      </div>
+      <div class="modal-ft">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmarConcil(${id})"><i class="ti ti-check"></i>Confirmar</button>
+      </div>
+    </div>
+  </div>`;
+  // Update neto on input
+  const montoInput = document.getElementById('concil-com-monto');
+  if(montoInput) montoInput.addEventListener('input', function(){
+    const com = parseFloat(this.value)||0;
+    const neto = m.monto - com;
+    const netoEl = document.getElementById('concil-neto');
+    if(netoEl) netoEl.textContent = m.moneda==='USD' ? fmtUSD(neto) : fmtARS(neto);
+  });
+  setTimeout(toggleComision, 50);
+}
+
+function toggleComision(){
+  const sel=document.getElementById('concil-tiene-com');
+  const wrap=document.getElementById('concil-com-wrap');
+  if(sel&&wrap) wrap.style.display=sel.value==='si'?'block':'none';
+}
+
+async function confirmarConcil(id){
+  const m=movs.find(mv=>mv.id===id); if(!m) return;
+  const tieneComision = document.getElementById('concil-tiene-com')?.value==='si';
+  const comMonto = tieneComision ? (parseFloat(document.getElementById('concil-com-monto')?.value)||0) : 0;
+
+  m.conciliado=true;
+  if(comMonto>0){
+    m.comisionBancaria = comMonto;
+    m.montoNeto = m.monto - comMonto;
+    m.notas = (m.notas?m.notas+' | ':'') + 'Comisión bancaria: '+fmtARS(comMonto)+' | Neto: '+fmtARS(m.montoNeto);
+  }
+
+  histConcil.unshift({movId:id,fechaAccion:todayStr(),cliente:m.cliente,detalle:m.detalle,cuenta:m.cuenta,tipo:m.tipo,monto:m.monto,montoNeto:m.montoNeto||m.monto,comision:comMonto,accion:'conciliado'});
+
+  const dbId=m._dbId||m.id;
+  if(dbId){
+    const updateData = {conciliado:true, notas:m.notas||null};
+    if(comMonto>0){
+      updateData.notas = m.notas;
+      // Store commission in notas field as JSON prefix
+    }
+    const {error}=await db.from('movimientos').update(updateData).eq('id',dbId);
+    if(error) console.error('Error conciliando:',error);
+    else console.log('Conciliado OK, id:',dbId);
+  }
+  closeModal();
+  render();
+}
 async function conciliar(id){
   const m=movs.find(m=>m.id===id);if(!m)return;
   m.conciliado=true;
@@ -1103,7 +1223,18 @@ function guardar(){
 }
 
 function closeModal(){document.getElementById('modal-root').innerHTML='';}
-function borrar(id){if(confirm('¿Eliminar este movimiento?')){movs=movs.filter(m=>m.id!==id);render();}}
+async function borrar(id){
+  if(confirm('¿Eliminar este movimiento?')){
+    const mov=movs.find(m=>m.id===id);
+    const dbId=mov?mov._dbId||mov.id:null;
+    movs=movs.filter(m=>m.id!==id);
+    if(dbId){
+      const {error}=await db.from('movimientos').delete().eq('id',dbId);
+      if(error) console.error('Error borrando mov:',error);
+    }
+    render();
+  }
+}
 
 /* ── CAJA MODAL ── */
 function openCajaModal(){
@@ -1354,6 +1485,7 @@ function vClienteFicha() {
         <span class="badge ${ESTADOS_BG[cli.estado]||'b-gray'}" style="font-size:12px">${cli.estado}</span>
         <button class="btn btn-ghost btn-sm" onclick="openEditCliente(${cli.id})"><i class="ti ti-pencil"></i>Editar</button>
         <button class="btn btn-ghost btn-sm" onclick="openCambiarEstado(${cli.id})"><i class="ti ti-settings"></i>Estado</button>
+        <button class="btn btn-red btn-sm" onclick="borrarCliente(${cli.id})"><i class="ti ti-trash"></i>Eliminar</button>
       </div>
     </div>
     ${cli.obs ? `<div style="background:var(--surf2);border-radius:var(--rsm);padding:9px 12px;font-size:12px;color:var(--ink2);margin-top:12px">${cli.obs}</div>` : ''}
@@ -1398,6 +1530,7 @@ function buildContratoCard(cli, ct, idx) {
   html += '<div style="display:flex;align-items:center;gap:8px"><span class="badge b-blue">' + ct.servicio + '</span><span class="badge ' + estadoBadge + '">' + ct.estado + '</span></div>';
   html += '<div style="display:flex;gap:4px">';
   if (ct.estado === 'Activo') html += '<button class="btn btn-green btn-sm" onclick="openRegistrarPago(' + cli.id + ',' + idx + ')"><i class="ti ti-cash"></i>Registrar pago</button>';
+  html += '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="borrarContrato(' + cli.id + ',' + idx + ')"><i class="ti ti-trash"></i></button>';
   html += '<button class="btn btn-ghost btn-sm" onclick="openEditContrato(' + cli.id + ',' + idx + ')"><i class="ti ti-pencil"></i>Editar</button>';
   html += '</div></div>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px">';
@@ -1489,10 +1622,100 @@ function aplicarEstadoCli(cliId) {
   closeModal(); abrirFicha(cliId);
 }
 
-function borrarCliente(id) {
+
+async function borrarContrato(cliId, ctIdx){
+  if(!confirm('¿Eliminar este contrato?')) return;
+  const cli=clientes.find(c=>c.id==cliId); if(!cli) return;
+  const ct=cli.contratos[ctIdx]; if(!ct) return;
+  const dbId=ct._dbId||ct.id;
+  cli.contratos.splice(ctIdx,1);
+  if(dbId && typeof dbId==='number'){
+    const {error}=await db.from('contratos').delete().eq('id',dbId);
+    if(error) console.error('Error borrando contrato:',error);
+  }
+  render();
+}
+
+
+let selMovIds = new Set();
+
+
+function toggleTodosMovs(cb){
+  const checks = document.querySelectorAll('input[type=checkbox][onchange^=toggleSelMov]');
+  checks.forEach(ch => {
+    ch.checked = cb.checked;
+    const id = parseInt(ch.getAttribute('onchange').match(/\d+/)?.[0]);
+    if(id){ if(cb.checked) selMovIds.add(id); else selMovIds.delete(id); }
+  });
+  actualizarBulkBar();
+}
+function toggleSelMov(id, cb){
+  if(cb.checked) selMovIds.add(id);
+  else selMovIds.delete(id);
+  actualizarBulkBar();
+}
+
+function actualizarBulkBar(){
+  const bar = document.getElementById('bulk-bar');
+  const cnt = document.getElementById('sel-count');
+  if(bar) bar.style.display = selMovIds.size > 0 ? 'flex' : 'none';
+  if(cnt) cnt.textContent = selMovIds.size + ' movimiento' + (selMovIds.size !== 1 ? 's' : '') + ' seleccionado' + (selMovIds.size !== 1 ? 's' : '');
+}
+
+function limpiarSeleccion(){
+  selMovIds.clear();
+  document.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.checked=false);
+  actualizarBulkBar();
+}
+
+async function borrarSeleccionados(){
+  if(!confirm('¿Eliminar ' + selMovIds.size + ' movimientos?')) return;
+  const ids = Array.from(selMovIds);
+  for(const id of ids){
+    const mov=movs.find(m=>m.id===id);
+    const dbId=mov?mov._dbId||mov.id:null;
+    if(dbId) await db.from('movimientos').delete().eq('id',dbId);
+  }
+  movs = movs.filter(m=>!selMovIds.has(m.id));
+  selMovIds.clear();
+  render();
+  // Clear checkboxes after render
+  setTimeout(()=>document.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.checked=false), 50);
+}
+async function eliminarMovConcil(id){
+  if(!confirm('¿Eliminar este movimiento de conciliación?')) return;
+  const mov=movs.find(m=>m.id===id);
+  const dbId=mov?mov._dbId||mov.id:null;
+  movs=movs.filter(m=>m.id!==id);
+  if(dbId){
+    const {error}=await db.from('movimientos').delete().eq('id',dbId);
+    if(error) console.error('Error eliminando:',error);
+  }
+  render();
+}
+async function borrarCliente(id) {
   if (confirm('¿Eliminar este cliente? Se perderá todo el historial.')) {
+    const cli=clientes.find(c=>c.id===id);
+    const dbId=cli?cli._dbId||cli.id:null;
+
+    // Liberar espacios del plano que tenga asignados
+    if(typeof espacios!=='undefined'){
+      espacios.forEach(esp=>{
+        const antes = esp.ocupaciones.length;
+        esp.ocupaciones = esp.ocupaciones.filter(o=>o.clienteId!=id);
+        if(esp.ocupaciones.length < antes){
+          // Eliminar ocupaciones de Supabase
+          db.from('ocupaciones').delete().eq('cliente_id', dbId||id);
+        }
+      });
+    }
+
     clientes = clientes.filter(c=>c.id!==id);
-    if(supaSession) supa.from('clientes').delete().eq('id',fichaClienteId);
+    if(dbId){
+      await db.from('ocupaciones').delete().eq('cliente_id',dbId);
+      await db.from('contratos').delete().eq('cliente_id',dbId);
+      await db.from('clientes').delete().eq('id',dbId);
+    }
     fichaClienteId = null;
     navTo('clientes');
   }
@@ -1657,15 +1880,13 @@ function confirmarPago(cliId, contratoIdx) {
   cli.estado = calcEstadoCliente(cli);
 
   closeModal();
-  if(supaSession){
-    guardarMovEnSupa(movs[0]);
-    // Update contrato prox_cobro in Supabase
-    const cliUpd=clientes.find(c=>c.id===cliId);
-    if(cliUpd){
-      const ctUpd=cliUpd.contratos.find(c=>c.id===ctId);
-      if(ctUpd) guardarContratoEnSupa(ctUpd, cliId);
-      guardarClienteEnSupa(cliUpd);
-    }
+  guardarMovEnSupa(movs[0]);
+  // Update contrato prox_cobro + estado cliente in Supabase
+  const cliUpd=clientes.find(cl=>cl.id===cliId);
+  if(cliUpd){
+    const ctUpd=cliUpd.contratos[contratoIdx];
+    if(ctUpd) guardarContratoEnSupa(ctUpd, cliId);
+    guardarClienteEnSupa(cliUpd);
   }
   abrirFicha(cliId);
 }
@@ -2232,7 +2453,7 @@ function openModalAsignar(espId, editIdx){
         </div>
         <div class="fg" style="margin:0"><label>Modalidad</label>
           <select id="asig-modal" onchange="toggleDiasSemana()">
-            ${['Mensual','Semanal','Por día','Anual'].map(m=>`<option${oc.modalidad===m?' selected':''}>${m}</option>`).join('')}
+            ${['Mensual','Semanal','Por día','Por hora','Anual'].map(m=>`<option${oc.modalidad===m?' selected':''}>${m}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -2247,6 +2468,13 @@ function openModalAsignar(espId, editIdx){
               ${d.slice(0,3)}
             </label>`;
           }).join('')}
+        </div>
+      </div>
+
+      <div id="asig-horario-wrap" style="display:none;margin-bottom:12px">
+        <div class="frow">
+          <div class="fg" style="margin:0"><label>Hora inicio</label><input type="time" id="asig-hora-ini" value="08:00"/></div>
+          <div class="fg" style="margin:0"><label>Hora fin</label><input type="time" id="asig-hora-fin" value="12:00"/></div>
         </div>
       </div>
 
@@ -2302,10 +2530,16 @@ function abrirCrearClienteRapido(){
   if(typeof openNuevoCliente==='function') openNuevoCliente();
 }
 
+function toggleHorario(){
+  const m=document.getElementById('asig-modal');
+  const hw=document.getElementById('asig-horario-wrap');
+  if(m&&hw) hw.style.display=m.value==='Por hora'?'block':'none';
+}
 function toggleDiasSemana(){
   const m=document.getElementById('asig-modal');
   const w=document.getElementById('dias-semana-wrap');
   if(m&&w) w.style.display=m.value==='Semanal'?'block':'none';
+  toggleHorario();
 }
 
 function resaltarDia(dia){
@@ -2512,6 +2746,7 @@ async function initApp(){
       if(appEl)   appEl.style.display='flex';
       await cargarDatosIniciales();
       render();
+      setTimeout(setActions,100);
     } else {
       if(loginEl) loginEl.style.display='flex';
       if(appEl)   appEl.style.display='none';
