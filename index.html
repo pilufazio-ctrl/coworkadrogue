@@ -1740,6 +1740,21 @@ async function borrarCliente(id) {
 }
 
 /* ── MODALES CONTRATO ── */
+
+function autoFillServicio(){
+  const espSel = document.getElementById('ct-espacio');
+  const servSel = document.getElementById('ct-serv');
+  if(!espSel||!servSel) return;
+  const espId = espSel.value;
+  if(!espId) return;
+  const esp = typeof espacios!=='undefined'?espacios.find(e=>e.id===espId):null;
+  if(!esp) return;
+  // Auto-select service based on space type
+  if(esp.tipo==='puesto'||esp.grupo==='mesa'||esp.grupo==='comunitario') servSel.value='Espacio Comunitario';
+  else if(esp.tipo==='oficina'||esp.grupo==='oficina') servSel.value=esp.capacidad>4?'Oficina Privada 8 puestos':'Oficina Privada 4 puestos';
+  else if(esp.id==='sala') servSel.value='Sala de Reuniones';
+  else if(esp.id==='jardin') servSel.value='Jardín';
+}
 function openNuevoContrato(cliId) {
   renderContratoModal(cliId, null, null);
 }
@@ -1762,7 +1777,13 @@ function renderContratoModal(cliId, editIdx, ct) {
     '<div class="modal-back" id="mover" onclick="if(event.target.id===\'mover\')closeModal()">' +
     '<div class="modal-box">' +
     '<div class="modal-hd"><span>' + (isEdit?'Editar contrato':'Nuevo contrato') + '</span><button class="btn btn-ghost btn-sm" onclick="closeModal()" style="padding:4px 8px"><i class="ti ti-x"></i></button></div>' +
-    '<div class="fg"><label>Servicio</label><select id="ct-serv">' + SERVICIOS_CLI.map(s=>'<option'+(c.servicio===s?' selected':'')+'>'+s+'</option>').join('') + '</select></div>' +
+    '<div class="frow">' +
+    '<div class="fg" style="margin:0"><label>Espacio del plano</label><select id="ct-espacio" onchange="autoFillServicio()">' +
+    '<option value="">— Sin espacio —</option>' +
+    (typeof espacios!=='undefined'?espacios.map(e=>'<option value="'+e.id+'"'+(c.espacioId===e.id?' selected':'')+'>'+e.label+'</option>').join(''):'') +
+    '</select></div>' +
+    '<div class="fg" style="margin:0"><label>Servicio / Plan</label><select id="ct-serv">' + SERVICIOS_CLI.map(s=>'<option'+(c.servicio===s?' selected':'')+'>'+s+'</option>').join('') + '</select></div>' +
+    '</div>' +
     '<div class="fg"><label>Detalle / Descripción</label><input type="text" id="ct-det" value="' + (c.detalle||'') + '" placeholder="Ej: Oficina 4 puestos, 10 horas sala..."/></div>' +
     '<div class="frow" style="margin-bottom:12px">' +
     '<div class="fg" style="margin:0"><label>Importe</label><input type="number" id="ct-imp" value="' + (c.importe||0) + '" step="0.01"/></div>' +
@@ -1818,7 +1839,22 @@ function guardarContrato(cliId, editIdx) {
     data.estado = 'Activo';
     data.historial = [];
     cli.contratos.push(data);
-    if(supaSession) guardarContratoEnSupa(data, cliId);
+    // If espacio selected, update plano
+    if(data.espacioId && typeof espacios!=='undefined'){
+      const esp = espacios.find(e=>e.id===data.espacioId);
+      if(esp){
+        esp.ocupaciones = esp.ocupaciones||[];
+        const yaOcupado = esp.ocupaciones.find(o=>o.clienteId===cliId);
+        if(!yaOcupado){
+          const newOcup = {clienteId:cliId, plan:data.servicio, modalidad:data.frecuencia||'Mensual',
+            diasSemana:[], fijo:true, moneda:data.moneda||'ARS', importe:data.importe||0,
+            inicio:data.inicio||todayStr(), espacioId:data.espacioId};
+          esp.ocupaciones.push(newOcup);
+          guardarOcupEnSupa(newOcup, data.espacioId);
+        }
+      }
+    }
+    guardarContratoEnSupa(data, cliId);
   }
   closeModal(); abrirFicha(cliId);
 }
