@@ -1096,25 +1096,32 @@ async function procesarArchivoImport(file){
       m.moneda = (m.moneda||'ARS').toUpperCase() === 'USD' ? 'USD' : 'ARS';
       m.monto = parseFloat(String(m.monto||0).replace(/[^0-9.]/g,''))||0;
 
-      // Parse date
+      // Parse date - handle all formats
       let fecha = m.fecha;
-      if(typeof fecha === 'number' || (typeof fecha === 'string' && !isNaN(parseFloat(fecha)) && String(fecha).match(/^\d+\.?\d*$/))){
-        const num = typeof fecha === 'number' ? fecha : parseFloat(fecha);
-        // Excel serial date → JS Date (Excel epoch is Jan 1 1900, but has a leap year bug so offset by 25569 days from Unix epoch)
-        const jsDate = new Date(Math.round((num - 25569) * 86400 * 1000));
-        fecha = jsDate.toISOString().slice(0,10);
-      } else if(fecha instanceof Date) {
+      if(fecha instanceof Date){
         fecha = fecha.toISOString().slice(0,10);
       } else {
-        fecha = String(fecha).trim();
-        // Try DD/MM/YYYY → YYYY-MM-DD
-        const parts = fecha.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$/);
-        if(parts) fecha = (parts[3].length===2?'20'+parts[3]:parts[3]) + '-' + parts[2].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
-        // Try YYYY/MM/DD
-        const parts2 = fecha.match(/^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$/);
-        if(parts2) fecha = parts2[1] + '-' + parts2[2].padStart(2,'0') + '-' + parts2[3].padStart(2,'0');
+        const raw = String(fecha||'').trim();
+        const num = parseFloat(raw);
+        if(!isNaN(num) && num > 1000){
+          // Excel serial number (days since 1900-01-00 with leap year bug)
+          const jsDate = new Date((num - 25569) * 86400000);
+          fecha = jsDate.toUTCString().slice(0,16);
+          // Use UTC to avoid timezone shift
+          const d = new Date((num - 25569) * 86400000);
+          const y = d.getUTCFullYear();
+          const mo = String(d.getUTCMonth()+1).padStart(2,'0');
+          const dy = String(d.getUTCDate()).padStart(2,'0');
+          fecha = y+'-'+mo+'-'+dy;
+        } else if(raw.match(/^\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}$/)){
+          const p = raw.split(/[/\-]/);
+          fecha = (p[2].length===2?'20'+p[2]:p[2])+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+        } else if(raw.match(/^\d{4}[/\-]\d{1,2}[/\-]\d{1,2}$/)){
+          fecha = raw.replace(/\//g,'-');
+        } else {
+          fecha = raw;
+        }
       }
-      // Validate date
       if(!fecha || isNaN(new Date(fecha).getTime())) continue;
       m.fecha = fecha;
 
