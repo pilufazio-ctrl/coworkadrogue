@@ -892,11 +892,7 @@ async function confirmarConcil(id){
 
   const dbId=m._dbId||m.id;
   if(dbId){
-    const updateData = {conciliado:true, notas:m.notas||null};
-    if(comMonto>0){
-      updateData.notas = m.notas;
-      // Store commission in notas field as JSON prefix
-    }
+    const updateData = {conciliado:true, notas:m.notas||null, comision_bancaria:comMonto||0, monto_neto:m.montoNeto||0};
     const {error}=await db.from('movimientos').update(updateData).eq('id',dbId);
     if(error) console.error('Error conciliando:',error);
     else console.log('Conciliado OK, id:',dbId);
@@ -2913,14 +2909,14 @@ async function cargarDatosIniciales(){
 }
 
 // ── MAPPERS ──
-function dbToMov(r){return{id:r.id,_dbId:r.id,fecha:r.fecha,tipo:r.tipo,ab:r.ab||'A',moneda:r.moneda||'ARS',cat:r.cat||'',detalle:r.detalle||'',cliente:r.cliente||'',monto:r.monto||0,medio:r.medio||'',cuenta:r.cuenta||'',comp:r.comp||'',drive:r.drive||'',notas:r.notas||'',espacioId:r.espacio_id||null,conciliado:r.conciliado||false};}
+function dbToMov(r){return{id:r.id,_dbId:r.id,fecha:r.fecha,tipo:r.tipo,ab:r.ab||'A',moneda:r.moneda||'ARS',cat:r.cat||'',detalle:r.detalle||'',cliente:r.cliente||'',monto:r.monto||0,medio:r.medio||'',cuenta:r.cuenta||'',comp:r.comp||'',drive:r.drive||'',notas:r.notas||'',espacioId:r.espacio_id||null,conciliado:r.conciliado||false,comisionBancaria:r.comision_bancaria||0,montoNeto:r.monto_neto||0};}
 function dbToCli(r){return{id:r.id,_dbId:r.id,nombre:r.nombre,empresa:r.empresa||'',tel:r.telefono||'',email:r.email||'',estado:r.estado||'Activo',_estadoManual:true,obs:r.obs||'',contratos:[]};}
 function dbToCont(r){return{id:r.id,_dbId:r.id,clienteId:r.cliente_id,servicio:r.servicio||'',modalidad:r.modalidad||'',detalle:r.detalle||'',frecuencia:r.frecuencia||'',inicio:r.inicio||'',vencimiento:r.vencimiento||'',importe:r.importe||0,moneda:r.moneda||'ARS',renovAuto:r.renov_auto,proxCobro:r.prox_cobro||'',estado:r.estado||'Activo',espacioId:r.espacio_id||null,historial:[]};}
 function dbToOcup(r){return{id:r.id,_dbId:r.id,clienteId:r.cliente_id,plan:r.plan||'',modalidad:r.modalidad||'Mensual',diasSemana:r.dias_semana||[],fijo:r.fijo!==false,moneda:r.moneda||'ARS',importe:r.importe||0,inicio:r.inicio||'',vencimiento:r.vencimiento||null,renovAuto:r.renov_auto!==false,espacioId:r.espacio_id};}
 
 // ── ESCRITURA (usa db = service role) ──
 async function guardarMovEnSupa(mov){
-  const p={fecha:mov.fecha||null,tipo:mov.tipo,ab:mov.ab||'A',moneda:mov.moneda||'ARS',cat:mov.cat||null,detalle:mov.detalle||null,cliente:mov.cliente||null,monto:Number(mov.monto)||0,medio:mov.medio||null,cuenta:mov.cuenta||null,comp:mov.comp||null,drive:mov.drive||null,notas:mov.notas||null,espacio_id:mov.espacioId||null,conciliado:mov.conciliado||false};
+  const p={fecha:mov.fecha||null,tipo:mov.tipo,ab:mov.ab||'A',moneda:mov.moneda||'ARS',cat:mov.cat||null,detalle:mov.detalle||null,cliente:mov.cliente||null,monto:Number(mov.monto)||0,medio:mov.medio||null,cuenta:mov.cuenta||null,comp:mov.comp||null,drive:mov.drive||null,notas:mov.notas||null,espacio_id:mov.espacioId||null,conciliado:mov.conciliado||false,comision_bancaria:mov.comisionBancaria||0,monto_neto:mov.montoNeto||0};
   const {data,error}=await db.from('movimientos').insert(p).select().single();
   if(error){console.error('Error mov:',error);return;}
   if(data){mov.id=data.id;mov._dbId=data.id;}
