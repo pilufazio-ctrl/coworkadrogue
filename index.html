@@ -1308,7 +1308,9 @@ let fichaContratoId = null;
 
 /* ── CLIENTES UTILS ── */
 function calcProxCobro(desde, freq) {
+  if(!desde) return '';
   const d = new Date(desde);
+  if(isNaN(d.getTime())) return '';
   switch(freq) {
     case 'Diario':      d.setDate(d.getDate()+1); break;
     case 'Semanal':     d.setDate(d.getDate()+7); break;
@@ -2729,9 +2731,11 @@ function liberarEspacio(espId, idx){
   }
 
   const ocToDelete=esp.ocupaciones[parseInt(idx)];
-  if(supaSession && ocToDelete && ocToDelete.id && typeof ocToDelete.id==='number'){
-    supa.from('ocupaciones').delete().eq('id',ocToDelete.id).then(({error})=>{
+  const dbId = ocToDelete?(ocToDelete._dbId||ocToDelete.id):null;
+  if(dbId && typeof dbId==='number'){
+    db.from('ocupaciones').delete().eq('id',dbId).then(({error})=>{
       if(error) console.error('Error liberando espacio:',error);
+      else console.log('Espacio liberado OK, id:',dbId);
     });
   }
   esp.ocupaciones.splice(parseInt(idx),1);
