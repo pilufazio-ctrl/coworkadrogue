@@ -1061,7 +1061,7 @@ async function procesarArchivoImport(file){
 
   try{
     const data = await file.arrayBuffer();
-    const wb = XLSX.read(data);
+    const wb = XLSX.read(data, {cellDates: true, cellText: false});
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
 
@@ -1098,9 +1098,10 @@ async function procesarArchivoImport(file){
 
       // Parse date
       let fecha = m.fecha;
-      if(typeof fecha === 'number'){
+      if(typeof fecha === 'number' || (typeof fecha === 'string' && !isNaN(parseFloat(fecha)) && String(fecha).match(/^\d+\.?\d*$/))){
+        const num = typeof fecha === 'number' ? fecha : parseFloat(fecha);
         // Excel serial date → JS Date (Excel epoch is Jan 1 1900, but has a leap year bug so offset by 25569 days from Unix epoch)
-        const jsDate = new Date(Math.round((fecha - 25569) * 86400 * 1000));
+        const jsDate = new Date(Math.round((num - 25569) * 86400 * 1000));
         fecha = jsDate.toISOString().slice(0,10);
       } else if(fecha instanceof Date) {
         fecha = fecha.toISOString().slice(0,10);
