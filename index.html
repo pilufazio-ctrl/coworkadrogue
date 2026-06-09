@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>CoWork Adrogué</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
@@ -432,7 +433,7 @@ const calcEstadoAuto=cli=>calcEstadoCliente(cli);
 const fmtDate=s=>s?new Date(s+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}):'—';
 const thisMonth=()=>new Date().toISOString().slice(0,7);
 
-const CATS_ING=['Comunitario','Oficina','Sala de Reuniones','Jardín','Paquetería','Alquiler Local','Otros'];
+const CATS_ING=['Comunitario','Oficina','Sala de Reuniones','Jardín','Paquetería','Alquiler Local','Domicilio Fiscal','Otros'];
 const CATS_EGR=['Expensas','Internet','Luz','Agua','Otros Servicios','Sueldos','Insumos','Mantenimiento','Limpieza','Otros'];
 const MEDIOS=['Efectivo','Transferencia','Débito','Crédito','Mercado Pago','Getnet PCT'];
 const CUENTAS=[
@@ -1036,7 +1037,7 @@ function genCustom() {
 /* ── IMPORTAR ── */
 function vImport(){
   return`<div class="card" style="margin-bottom:14px"><div class="card-hd">Subir archivo</div>
-    <div class="drop-zone" onclick="simImport()" id="dropzone"><i class="ti ti-file-spreadsheet"></i><div style="font-size:14px;font-weight:500;margin-bottom:4px">Arrastrar o hacer clic para seleccionar</div><div style="font-size:12px;color:var(--ink2)">.xlsx · .xls · .csv</div></div>
+    <div class="drop-zone" onclick="simImport()" ondragover="event.preventDefault()" ondrop="event.preventDefault();procesarArchivoImport(event.dataTransfer.files[0])" id="dropzone"><i class="ti ti-file-spreadsheet"></i><div style="font-size:14px;font-weight:500;margin-bottom:4px">Arrastrar o hacer clic para seleccionar</div><div style="font-size:12px;color:var(--ink2)">.xlsx · .xls · .csv</div></div>
     <div id="imp-prog" style="display:none;margin-top:14px"></div>
   </div>
   <div class="card"><div class="card-hd">Columnas esperadas</div><div class="tbl-wrap"><table><thead><tr><th>Campo</th><th>Descripción</th><th>Ejemplo</th></tr></thead><tbody>
@@ -1045,14 +1046,103 @@ function vImport(){
 }
 
 function simImport(){
-  const p=document.getElementById('imp-prog');if(!p)return;
-  p.style.display='block';
-  p.innerHTML=`<div style="font-size:12px;color:var(--ink2);margin-bottom:6px" id="imp-txt">Leyendo archivo...</div><div class="pbar"><div class="pfill" id="pb" style="width:0%"></div></div>`;
-  let pct=0;const steps=['Leyendo...','Detectando columnas...','Mapeando A/B...','Normalizando...','Verificando duplicados...','Importando...','¡Listo!'];
-  const iv=setInterval(()=>{pct+=15;const pb=document.getElementById('pb'),t=document.getElementById('imp-txt');if(pb)pb.style.width=Math.min(pct,100)+'%';if(t)t.textContent=steps[Math.min(Math.floor(pct/15),steps.length-1)];if(pct>=100){clearInterval(iv);setTimeout(()=>{if(p)p.innerHTML+=`<div class="note note-green" style="margin-top:10px"><i class="ti ti-circle-check"></i><span>312 registros importados · 8 duplicados omitidos</span></div>`;},300);}},280);
+  // Trigger file input
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.xlsx,.xls,.csv';
+  inp.onchange = e => procesarArchivoImport(e.target.files[0]);
+  inp.click();
 }
 
-/* ── CHARTS ── */
+async function procesarArchivoImport(file){
+  if(!file) return;
+  const p = document.getElementById('imp-prog');
+  if(p){ p.style.display='block'; p.innerHTML='<div style="font-size:13px;color:var(--ink2)">Leyendo archivo...</div><div class="pbar"><div class="pfill" id="pb" style="width:20%"></div></div>'; }
+
+  try{
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
+
+    if(p) document.getElementById('pb').style.width='40%';
+
+    // Map column names (supports both field names and labels)
+    const colMap = {
+      'fecha':'fecha','tipo':'tipo','ab':'ab','a/b':'ab','moneda':'moneda',
+      'categoría':'cat','categoria':'cat','cliente':'cliente','cliente / proveedor':'cliente',
+      'detalle':'detalle','monto':'monto','medio':'medio','medio de pago':'medio',
+      'cuenta':'cuenta','comprobante':'comp','nro. comprobante':'comp',
+      'drive':'drive','link comprobante (google drive)':'drive','notas':'notas'
+    };
+
+    let importados = 0, duplicados = 0, errores = 0;
+    const nuevos = [];
+
+    for(const row of rows){
+      const m = {};
+      for(const [key, val] of Object.entries(row)){
+        const mapped = colMap[key.toLowerCase().trim()];
+        if(mapped) m[mapped] = String(val).trim();
+      }
+      if(!m.fecha || !m.tipo) continue;
+
+      // Normalize
+      m.tipo = m.tipo.toLowerCase().includes('egreso') ? 'egreso' : 'ingreso';
+      m.ab = (m.ab||'A').toUpperCase() === 'B' ? 'B' : 'A';
+      m.moneda = (m.moneda||'ARS').toUpperCase() === 'USD' ? 'USD' : 'ARS';
+      m.monto = parseFloat(String(m.monto||0).replace(/[^0-9.]/g,''))||0;
+
+      // Parse date
+      let fecha = m.fecha;
+      if(typeof fecha === 'number'){
+        // Excel serial date
+        const d = XLSX.SSF.parse_date_code(fecha);
+        fecha = d.y + '-' + String(d.m).padStart(2,'0') + '-' + String(d.d).padStart(2,'0');
+      } else {
+        // Try DD/MM/YYYY → YYYY-MM-DD
+        const parts = fecha.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$/);
+        if(parts) fecha = (parts[3].length===2?'20'+parts[3]:parts[3]) + '-' + parts[2].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
+      }
+      m.fecha = fecha;
+
+      // Check duplicate
+      const isDup = movs.some(ex => ex.fecha===m.fecha && ex.monto===m.monto && ex.tipo===m.tipo && ex.cat===(m.cat||''));
+      if(isDup){ duplicados++; continue; }
+
+      nuevos.push(m);
+    }
+
+    if(p) document.getElementById('pb').style.width='60%';
+
+    // Save to Supabase in batches
+    const batchSize = 50;
+    for(let i=0; i<nuevos.length; i+=batchSize){
+      const batch = nuevos.slice(i, i+batchSize).map(m=>({
+        fecha:m.fecha, tipo:m.tipo, ab:m.ab, moneda:m.moneda,
+        cat:m.cat||null, detalle:m.detalle||null, cliente:m.cliente||null,
+        monto:m.monto, medio:m.medio||null, cuenta:m.cuenta||null,
+        comp:m.comp||null, drive:m.drive||null, notas:m.notas||null,
+        conciliado:false, comision_bancaria:0, monto_neto:0
+      }));
+      const {data, error} = await db.from('movimientos').insert(batch).select();
+      if(error){ console.error('Error importando batch:', error); errores += batch.length; }
+      else {
+        const mapped = data.map(r=>dbToMov(r));
+        movs = [...mapped, ...movs];
+        importados += data.length;
+      }
+      if(p) document.getElementById('pb').style.width = (60 + 40*(i+batchSize)/nuevos.length) + '%';
+    }
+
+    if(p) p.innerHTML += '<div class="note note-green" style="margin-top:10px"><i class="ti ti-circle-check"></i><span>'+importados+' registros importados · '+duplicados+' duplicados omitidos'+(errores>0?' · '+errores+' errores':'')+'</span></div>';
+    render();
+
+  } catch(e){
+    console.error('Error importando:', e);
+    if(p) p.innerHTML += '<div class="note note-red" style="margin-top:10px">Error al leer el archivo. Verificá el formato.</div>';
+  }
+}
 function initCharts(){
   dc();
   const PAL=['#1a63b0','#18A374','#b87213','#5548c8','#dc4a49','#078b61'];
