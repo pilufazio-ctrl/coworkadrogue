@@ -1054,6 +1054,41 @@ function simImport(){
   inp.click();
 }
 
+// Normaliza cualquier formato de fecha a 'YYYY-MM-DD' (o null si no se puede)
+function toISODate(v){
+  if(v===null || v===undefined || v==='') return null;
+  // Objeto Date (duck-typing para sobrevivir a distintos contextos)
+  if(v instanceof Date || (typeof v==='object' && typeof v.getMonth==='function')){
+    if(isNaN(v.getTime())) return null;
+    return v.getFullYear()+'-'+String(v.getMonth()+1).padStart(2,'0')+'-'+String(v.getDate()).padStart(2,'0');
+  }
+  // Número serial de Excel
+  if(typeof v==='number' && v>1000){
+    const d = new Date(Math.round((v-25569)*86400000));
+    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+  }
+  const raw = String(v).trim();
+  if(!raw) return null;
+  // dd/mm/yyyy o dd-mm-yyyy
+  let mm = raw.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$/);
+  if(mm){
+    const y = mm[3].length===2 ? '20'+mm[3] : mm[3];
+    return y+'-'+mm[2].padStart(2,'0')+'-'+mm[1].padStart(2,'0');
+  }
+  // yyyy-mm-dd o yyyy/mm/dd
+  mm = raw.match(/^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$/);
+  if(mm) return mm[1]+'-'+mm[2].padStart(2,'0')+'-'+mm[3].padStart(2,'0');
+  // Serial de Excel como texto
+  if(/^\d+(\.\d+)?$/.test(raw) && parseFloat(raw)>1000){
+    const d = new Date(Math.round((parseFloat(raw)-25569)*86400000));
+    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+  }
+  // Último intento: texto tipo "Thu Aug 06 2026 00:00:00 GMT-0300 (...)"
+  const d = new Date(raw);
+  if(!isNaN(d.getTime())) return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return null;
+}
+
 async function procesarArchivoImport(file){
   if(!file) return;
   const p = document.getElementById('imp-prog');
@@ -1083,7 +1118,7 @@ async function procesarArchivoImport(file){
       const m = {};
       for(const [key, val] of Object.entries(row)){
         const mapped = colMap[key.toLowerCase().trim()];
-        if(mapped) m[mapped] = String(val).trim();
+        if(mapped) m[mapped] = (mapped==='fecha') ? val : String(val).trim();
       }
       // Skip header rows
       if(!m.fecha || !m.tipo) continue;
@@ -1096,39 +1131,9 @@ async function procesarArchivoImport(file){
       m.moneda = (m.moneda||'ARS').toUpperCase() === 'USD' ? 'USD' : 'ARS';
       m.monto = parseFloat(String(m.monto||0).replace(/[^0-9.]/g,''))||0;
 
-      // Parse date - handle all formats
-      let fecha = m.fecha;
-      if(fecha instanceof Date){
-        fecha = fecha.toISOString().slice(0,10);
-      } else {
-        const raw = String(fecha||'').trim();
-        const num = parseFloat(raw);
-        if(!isNaN(num) && num > 1000){
-          // Excel serial number (days since 1900-01-00 with leap year bug)
-          const jsDate = new Date((num - 25569) * 86400000);
-          fecha = jsDate.toUTCString().slice(0,16);
-          // Use UTC to avoid timezone shift
-          const d = new Date((num - 25569) * 86400000);
-          const y = d.getUTCFullYear();
-          const mo = String(d.getUTCMonth()+1).padStart(2,'0');
-          const dy = String(d.getUTCDate()).padStart(2,'0');
-          fecha = y+'-'+mo+'-'+dy;
-        } else if(raw.match(/^[A-Za-z]{3}\s/)){
-          // JS Date string like "Thu Aug 06 2026 00:00:00 GMT-0300"
-          const d = new Date(raw);
-          if(!isNaN(d.getTime())){
-            fecha = d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
-          }
-        } else if(raw.match(/^\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}$/)){
-          const p = raw.split(/[/\-]/);
-          fecha = (p[2].length===2?'20'+p[2]:p[2])+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
-        } else if(raw.match(/^\d{4}[/\-]\d{1,2}[/\-]\d{1,2}$/)){
-          fecha = raw.replace(/\//g,'-');
-        } else {
-          fecha = raw;
-        }
-      }
-      if(!fecha || isNaN(new Date(fecha).getTime())) continue;
+      // Parse date - handle all formats (Date object, Excel serial, dd/mm/yyyy, yyyy-mm-dd, JS toString)
+      const fecha = toISODate(m.fecha);
+      if(!fecha) continue;
       m.fecha = fecha;
 
       // Check duplicate
