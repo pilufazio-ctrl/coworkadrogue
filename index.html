@@ -1085,7 +1085,10 @@ async function procesarArchivoImport(file){
         const mapped = colMap[key.toLowerCase().trim()];
         if(mapped) m[mapped] = String(val).trim();
       }
+      // Skip header rows
       if(!m.fecha || !m.tipo) continue;
+      if(String(m.fecha).toLowerCase()==='fecha' || String(m.tipo).toLowerCase()==='tipo') continue;
+      if(String(m.monto).toLowerCase()==='monto') continue;
 
       // Normalize
       m.tipo = m.tipo.toLowerCase().includes('egreso') ? 'egreso' : 'ingreso';
