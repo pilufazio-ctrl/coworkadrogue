@@ -103,6 +103,8 @@ body{font-family:'Inter',-apple-system,sans-serif;font-size:14px;color:var(--ink
 /* METRICS */
 .metrics{display:grid;gap:12px;margin-bottom:18px}
 .m4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.m5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.m6{grid-template-columns:repeat(6,minmax(0,1fr))}
 .m3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .m2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .m-card{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:16px 18px;position:relative;overflow:hidden;box-shadow:var(--shadow-sm);transition:box-shadow var(--tr)}
@@ -254,6 +256,8 @@ select.flt:focus{outline:none;border-color:var(--blue)}
 
   /* Metrics — 2 columns */
   .m4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .m5{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .m6{grid-template-columns:repeat(2,minmax(0,1fr))}
   .m3{grid-template-columns:repeat(2,minmax(0,1fr))}
   .m-val{font-size:20px}
 
@@ -427,6 +431,29 @@ const fmtARS=v=>'$\u202f'+Math.round(Math.abs(v)).toLocaleString('es-AR');
 const fmtUSD=v=>'U$S\u202f'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtK=v=>{const a=Math.abs(v);if(a>=1e6)return'$'+(a/1e6).toFixed(1)+'M';if(a>=1e3)return'$'+Math.round(a/1e3)+'k';return'$'+Math.round(a)};
 const fmtKU=v=>{const a=Math.abs(v);return a>=1000?'U$S '+(a/1000).toFixed(1)+'k':'U$S '+a.toFixed(0)};
+
+// ── COTIZACIÓN DÓLAR (en vivo desde dolarapi.com, con valor de respaldo) ──
+let cotizUSD = { blue:{compra:1430,venta:1450}, oficial:{compra:1410,venta:1460}, fecha:null, online:false };
+async function cargarCotizUSD(){
+  try{
+    const r = await fetch('https://dolarapi.com/v1/dolares');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const arr = await r.json();
+    const b = Array.isArray(arr) && arr.find(d=>d.casa==='blue');
+    const o = Array.isArray(arr) && arr.find(d=>d.casa==='oficial');
+    if(b) cotizUSD.blue    = { compra:+b.compra||cotizUSD.blue.compra,    venta:+b.venta||cotizUSD.blue.venta };
+    if(o) cotizUSD.oficial = { compra:+o.compra||cotizUSD.oficial.compra, venta:+o.venta||cotizUSD.oficial.venta };
+    cotizUSD.fecha  = (b&&b.fechaActualizacion) || (o&&o.fechaActualizacion) || null;
+    cotizUSD.online = true;
+  }catch(e){
+    console.warn('Cotización USD: no se pudo actualizar, uso valor de respaldo.', e.message);
+    cotizUSD.online = false;
+  }
+  if(typeof view!=='undefined' && view==='dashboard') render();
+}
+// Convierte un monto en USD a pesos (por defecto al dólar blue venta)
+const usdAPesos = (usd, tipo) => (usd||0) * (((cotizUSD[tipo||'blue'])||cotizUSD.blue).venta||0);
+const cotizTxt = () => '$'+Math.round(cotizUSD.blue.venta).toLocaleString('es-AR')+' blue'+(cotizUSD.online?'':' (aprox.)');
 const todayStr=()=>new Date().toISOString().slice(0,10);
 const diffDays=s=>s?Math.ceil((new Date(s)-new Date())/(864e5)):null;
 const calcEstadoAuto=cli=>calcEstadoCliente(cli);
@@ -587,7 +614,8 @@ function periodoLabel(p) {
 function vDashboard(){
   const filtrados = getPeriodoMovs(dashPeriodo);
   const tIngARS=ingARS(filtrados), tEgrARS=egrARS(filtrados), net=tIngARS-tEgrARS;
-  const tIngUSD=ingUSD(filtrados), sUSD=ingUSD(movs)-egrUSD(movs);
+  const tIngUSD=ingUSD(filtrados), sUSD=CUENTAS.filter(c=>c.moneda==='USD').reduce((s,c)=>s+saldoCta(c.nombre),0);
+  const netTotal = net + usdAPesos(tIngUSD); // resultado neto con USD pesificados
   const sARS=CUENTAS.filter(c=>c.moneda==='ARS').reduce((s,c)=>s+saldoCta(c.nombre),0);
 
   // Resumen del día
@@ -625,12 +653,15 @@ function vDashboard(){
   </div>
 
   <!-- Métricas período -->
-  <div class="metrics m4">
-    <div class="m-card"><div class="m-icon" style="background:#e8f8f2"><i class="ti ti-arrow-up-right" style="color:var(--green);font-size:17px"></i></div><div class="m-label">Ingresos ARS — ${lbl}</div><div class="m-val pos">${fmtK(tIngARS)}</div><div class="m-sub" style="color:var(--amber)">${tIngUSD>0?fmtKU(tIngUSD)+' USD':movs.filter(m=>m.tipo==='ingreso').length+' mov. totales'}</div></div>
+  <div class="metrics m6">
+    <div class="m-card"><div class="m-icon" style="background:#e8f8f2"><i class="ti ti-arrow-up-right" style="color:var(--green);font-size:17px"></i></div><div class="m-label">Ingresos ARS — ${lbl}</div><div class="m-val pos">${fmtK(tIngARS)}</div><div class="m-sub">${movs.filter(m=>m.tipo==='ingreso'&&m.moneda!=='USD').length} mov. en pesos</div></div>
+    <div class="m-card"><div class="m-icon" style="background:#fff3e0"><i class="ti ti-currency-dollar" style="color:var(--amber);font-size:17px"></i></div><div class="m-label">Caja USD en pesos</div><div class="m-val" style="color:var(--amber)">${sUSD>0?fmtK(usdAPesos(sUSD)):'$0'}</div><div class="m-sub" title="Dólares convertidos al blue (venta)">${sUSD>0?fmtUSD(sUSD)+' · '+cotizTxt():'Sin dólares en caja'}</div></div>
     <div class="m-card"><div class="m-icon" style="background:#fdecea"><i class="ti ti-arrow-down-left" style="color:var(--red);font-size:17px"></i></div><div class="m-label">Egresos ARS — ${lbl}</div><div class="m-val neg">${fmtK(tEgrARS)}</div><div class="m-sub">${filtrados.filter(m=>m.tipo==='egreso').length} movimientos</div></div>
-    <div class="m-card"><div class="m-icon" style="background:${net>=0?'#e8f8f2':'#fdecea'}"><i class="ti ti-scale" style="color:${net>=0?'var(--green)':'var(--red)'};font-size:17px"></i></div><div class="m-label">Resultado neto — ${lbl}</div><div class="m-val" style="color:${net>=0?'var(--green-d)':'var(--red-d)'}">${net>=0?'+':'−'}${fmtK(Math.abs(net))}</div><div class="m-sub">Margen ${tIngARS>0?Math.round(Math.abs(net)/tIngARS*100):0}%</div></div>
-    <div class="m-card"><div class="m-icon" style="background:var(--purple-bg)"><i class="ti ti-building-bank" style="color:var(--purple);font-size:17px"></i></div><div class="m-label">Disponible total ARS</div><div class="m-val" style="color:var(--purple)">${fmtK(sARS)}</div><div class="m-sub" style="color:var(--amber)">${fmtKU(sUSD)} en Caja USD</div></div>
+    <div class="m-card"><div class="m-icon" style="background:${net>=0?'#e8f8f2':'#fdecea'}"><i class="ti ti-scale" style="color:${net>=0?'var(--green)':'var(--red)'};font-size:17px"></i></div><div class="m-label">Neto ARS — ${lbl}</div><div class="m-val" style="color:${net>=0?'var(--green-d)':'var(--red-d)'}">${net>=0?'+':'−'}${fmtK(Math.abs(net))}</div><div class="m-sub">Margen ${tIngARS>0?Math.round(Math.abs(net)/tIngARS*100):0}% · solo pesos</div></div>
+    <div class="m-card"><div class="m-icon" style="background:${netTotal>=0?'#e8f8f2':'#fdecea'}"><i class="ti ti-scale" style="color:${netTotal>=0?'var(--green)':'var(--red)'};font-size:17px"></i></div><div class="m-label">Neto total — ${lbl}</div><div class="m-val" style="color:${netTotal>=0?'var(--green-d)':'var(--red-d)'}">${netTotal>=0?'+':'−'}${fmtK(Math.abs(netTotal))}</div><div class="m-sub">${tIngUSD>0?'Incl. '+fmtUSD(tIngUSD)+' pesif. al blue':'= Neto ARS (sin USD)'}</div></div>
+    <div class="m-card"><div class="m-icon" style="background:var(--purple-bg)"><i class="ti ti-building-bank" style="color:var(--purple);font-size:17px"></i></div><div class="m-label">Disponible total ARS</div><div class="m-val" style="color:var(--purple)">${fmtK(sARS)}</div><div class="m-sub">${sUSD>0?'Con dólares ≈ '+fmtK(sARS+usdAPesos(sUSD)):'Solo cuentas en pesos'}</div></div>
   </div>
+  ${sUSD>0?`<div style="font-size:11px;color:var(--ink3);margin:-10px 0 16px;display:flex;align-items:center;gap:6px"><i class="ti ti-info-circle" style="font-size:13px"></i><span>Dólares convertidos al blue${cotizUSD.fecha?' · cotización actualizada '+new Date(cotizUSD.fecha).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''}${cotizUSD.online?'':' · valor de respaldo (sin conexión a la cotización en vivo)'}</span></div>`:''}
 
   <div class="g2">
     <div class="card"><div class="card-hd">Ingresos vs Egresos — ${lbl}</div><div style="position:relative;height:200px"><canvas id="ch-dash"></canvas></div></div>
@@ -2991,6 +3022,7 @@ async function initApp(){
       await cargarDatosIniciales();
       render();
       setTimeout(setActions,100);
+      cargarCotizUSD();
     } else {
       if(loginEl) loginEl.style.display='flex';
       if(appEl)   appEl.style.display='none';
@@ -3023,6 +3055,7 @@ async function doLogin(){
   document.getElementById('app').style.display='flex';
   await cargarDatosIniciales();
   render();
+  cargarCotizUSD();
 }
 
 function showLoginError(msg){
@@ -3068,7 +3101,7 @@ async function cargarDatosIniciales(){
 }
 
 // ── MAPPERS ──
-function dbToMov(r){return{id:r.id,_dbId:r.id,fecha:r.fecha,tipo:r.tipo,ab:r.ab||'A',moneda:r.moneda||'ARS',cat:r.cat||'',detalle:r.detalle||'',cliente:r.cliente||'',monto:r.monto||0,medio:r.medio||'',cuenta:r.cuenta||'',comp:r.comp||'',drive:r.drive||'',notas:r.notas||'',espacioId:r.espacio_id||null,conciliado:r.conciliado||false,comisionBancaria:r.comision_bancaria||0,montoNeto:r.monto_neto||0};}
+function dbToMov(r){const cta=r.cuenta||'';const esCtaUSD=CUENTAS.some(c=>c.nombre===cta&&c.moneda==='USD');return{id:r.id,_dbId:r.id,fecha:r.fecha,tipo:r.tipo,ab:r.ab||'A',moneda:esCtaUSD?'USD':(r.moneda||'ARS'),cat:r.cat||'',detalle:r.detalle||'',cliente:r.cliente||'',monto:r.monto||0,medio:r.medio||'',cuenta:cta,comp:r.comp||'',drive:r.drive||'',notas:r.notas||'',espacioId:r.espacio_id||null,conciliado:r.conciliado||false,comisionBancaria:r.comision_bancaria||0,montoNeto:r.monto_neto||0};}
 function dbToCli(r){return{id:r.id,_dbId:r.id,nombre:r.nombre,empresa:r.empresa||'',tel:r.telefono||'',email:r.email||'',estado:r.estado||'Activo',_estadoManual:true,obs:r.obs||'',contratos:[]};}
 function dbToCont(r){return{id:r.id,_dbId:r.id,clienteId:r.cliente_id,servicio:r.servicio||'',modalidad:r.modalidad||'',detalle:r.detalle||'',frecuencia:r.frecuencia||'',inicio:r.inicio||'',vencimiento:r.vencimiento||'',importe:r.importe||0,moneda:r.moneda||'ARS',renovAuto:r.renov_auto,proxCobro:r.prox_cobro||'',estado:r.estado||'Activo',espacioId:r.espacio_id||null,historial:[]};}
 function dbToOcup(r){return{id:r.id,_dbId:r.id,clienteId:r.cliente_id,plan:r.plan||'',modalidad:r.modalidad||'Mensual',diasSemana:r.dias_semana||[],fijo:r.fijo!==false,moneda:r.moneda||'ARS',importe:r.importe||0,inicio:r.inicio||'',vencimiento:r.vencimiento||null,renovAuto:r.renov_auto!==false,espacioId:r.espacio_id};}
