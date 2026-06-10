@@ -966,12 +966,12 @@ function vReportes(){
     <div class="card"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><div style="width:36px;height:36px;background:var(--blue-bg);border-radius:10px;display:flex;align-items:center;justify-content:center"><i class="ti ti-calendar-day" style="font-size:17px;color:var(--blue)"></i></div><div><div style="font-size:14px;font-weight:600">Reporte del día</div><div style="font-size:11px;color:var(--ink3)">Movimientos de una fecha</div></div></div>
       <div class="fg"><label>Fecha</label><input type="date" id="rep-dia" value="${td}"/></div>
       <div class="fg"><label>Incluir</label><select id="rep-dia-tipo"><option value="todos">Ingresos y egresos</option><option value="ingreso">Solo ingresos</option><option value="egreso">Solo egresos</option></select></div>
-      <button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="genDia()"><i class="ti ti-download"></i>Descargar CSV del día</button>
+      <button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="genDia()"><i class="ti ti-download"></i>Descargar Excel del día</button>
     </div>
     <div class="card"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><div style="width:36px;height:36px;background:var(--green-bg);border-radius:10px;display:flex;align-items:center;justify-content:center"><i class="ti ti-calendar-month" style="font-size:17px;color:var(--green)"></i></div><div><div style="font-size:14px;font-weight:600">Reporte mensual</div><div style="font-size:11px;color:var(--ink3)">Resumen completo del mes</div></div></div>
       <div class="fg"><label>Mes</label><input type="month" id="rep-mes" value="${tm}"/></div>
       <div class="fg"><label>Incluir</label><select id="rep-mes-tipo"><option value="todos">Ingresos y egresos</option><option value="ingreso">Solo ingresos</option><option value="egreso">Solo egresos</option></select></div>
-      <button class="btn btn-green" style="width:100%;margin-top:4px" onclick="genMes()"><i class="ti ti-download"></i>Descargar CSV mensual</button>
+      <button class="btn btn-green" style="width:100%;margin-top:4px" onclick="genMes()"><i class="ti ti-download"></i>Descargar Excel mensual</button>
     </div>
   </div>
   <div class="card" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><div style="width:36px;height:36px;background:var(--amber-bg);border-radius:10px;display:flex;align-items:center;justify-content:center"><i class="ti ti-adjustments-horizontal" style="font-size:17px;color:var(--amber)"></i></div><div><div style="font-size:14px;font-weight:600">Reporte personalizado</div><div style="font-size:11px;color:var(--ink3)">Rango de fechas con filtros</div></div></div>
@@ -981,7 +981,7 @@ function vReportes(){
       <div class="fg" style="margin:0"><label>Tipo</label><select id="rep-cust-tipo"><option value="todos">Todos</option><option value="ingreso">Ingresos</option><option value="egreso">Egresos</option></select></div>
       <div class="fg" style="margin:0"><label>A/B</label><select id="rep-cust-ab"><option value="todos">A y B</option><option value="A">Solo A</option><option value="B">Solo B</option></select></div>
     </div>
-    <button class="btn" style="background:var(--amber);border-color:var(--amber);color:#fff" onclick="genCustom()"><i class="ti ti-download"></i>Descargar CSV personalizado</button>
+    <button class="btn" style="background:var(--amber);border-color:var(--amber);color:#fff" onclick="genCustom()"><i class="ti ti-download"></i>Descargar Excel personalizado</button>
   </div>
   <div class="card"><div class="card-hd">Vista previa — mes actual</div>${prevRep(movs.filter(m=>m.fecha.startsWith(tm)))}</div>`;
 }
@@ -1004,6 +1004,185 @@ function dlCSV(rows, nombre) {
   a.href = URL.createObjectURL(blob);
   a.download = nombre;
   a.click();
+}
+
+// ── EXPORTAR EXCEL PROLIJO ──────────────────────────────────────────────
+function exportarXLSX(lista, titulo, periodo, nombreArchivo) {
+  const ingresos = lista.filter(m => m.tipo === 'ingreso');
+  const egresos  = lista.filter(m => m.tipo === 'egreso');
+  const tIngARS  = ingresos.filter(m=>m.moneda!=='USD').reduce((s,m)=>s+m.monto,0);
+  const tIngUSD  = ingresos.filter(m=>m.moneda==='USD').reduce((s,m)=>s+m.monto,0);
+  const tEgr     = egresos.reduce((s,m)=>s+m.monto,0);
+  const neto     = tIngARS - tEgr;
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Paleta ──
+  const C = {
+    azulOsc:  '1A5276', azulMed: '1F618D', azulHead: '2E86C1', azulClar: 'D6EAF8',
+    rojoOsc:  '922B21', rojoClar: 'FADBD8',
+    verdeOsc: '1E8449', verdeClar: 'D5F5E3',
+    ambar:    'B7770D', ambarClar: 'FEF9E7',
+    gris:     'F2F3F4', blanco: 'FFFFFF',
+    negro:    '000000'
+  };
+
+  const font  = (bold,color,sz) => ({bold,color:{rgb:color||C.negro},sz:sz||10,name:'Arial'});
+  const fill  = hex  => ({patternType:'solid',fgColor:{rgb:hex}});
+  const alignC = () => ({horizontal:'center',vertical:'center'});
+  const alignR = () => ({horizontal:'right',  vertical:'center'});
+  const alignL = () => ({horizontal:'left',   vertical:'center',wrapText:true});
+  const border = () => {const s={style:'thin',color:{rgb:'BDBDBD'}};return{top:s,bottom:s,left:s,right:s};};
+  const borderB= () => {const t={style:'thin',color:{rgb:'BDBDBD'}},b={style:'medium',color:{rgb:'2E86C1'}};return{top:t,bottom:b,left:t,right:t};};
+
+  const fmtARS_xl = '#,##0';
+  const fmtUSD_xl = '#,##0.00';
+
+  function cell(v, bold, bgHex, colorHex, align, numFmt, sz) {
+    const c = {v, t: typeof v==='number'?'n':'s'};
+    c.s = {
+      font: font(!!bold, colorHex||C.negro, sz||10),
+      fill: fill(bgHex||C.blanco),
+      alignment: align==='r'?alignR():align==='c'?alignC():alignL(),
+      border: border()
+    };
+    if(numFmt) c.s.numFmt = numFmt;
+    return c;
+  }
+
+  function cellTotal(v, bgHex, colorHex, numFmt) {
+    return {v, t:'n', s:{font:font(true,colorHex||C.blanco,11),fill:fill(bgHex),alignment:alignR(),border:borderB(),numFmt:numFmt||fmtARS_xl}};
+  }
+
+  function cellHd(v, bgHex) {
+    return {v, t:'s', s:{font:font(true,C.blanco,9),fill:fill(bgHex||C.azulHead),alignment:alignC(),border:border()}};
+  }
+
+  // ── HOJA: Movimientos (carga contable) ──
+  function makeMovSheet(lista, conTotales) {
+    const aoa = [];
+    // Fila título
+    aoa.push([{v:titulo+' — '+periodo, t:'s', s:{font:font(true,C.blanco,13),fill:fill(C.azulOsc),alignment:alignC(),border:border()}},...Array(10).fill({v:'',t:'s',s:{fill:fill(C.azulOsc),border:border()}})]);
+    // Fila subtítulo
+    aoa.push([{v:'CoWork Adrogué  |  Generado '+new Date().toLocaleDateString('es-AR',{day:'2-digit',month:'long',year:'numeric'}),t:'s',s:{font:font(false,C.blanco,9),fill:fill(C.azulMed),alignment:alignC(),border:border()}},...Array(10).fill({v:'',t:'s',s:{fill:fill(C.azulMed),border:border()}})]);
+    // Encabezados columnas
+    const hdrs = ['Fecha','Tipo','A/B','Cliente / Proveedor','Categoría','Detalle','Medio de pago','Cuenta','Comprobante','Moneda','Monto'];
+    aoa.push(hdrs.map(h => cellHd(h, C.azulHead)));
+    // Datos
+    lista.forEach((m,i) => {
+      const bg = i%2===0 ? C.blanco : C.gris;
+      const esEgr = m.tipo==='egreso';
+      aoa.push([
+        cell(m.fecha,        false, bg, C.negro,   'c', null, 9),
+        cell(m.tipo,         true,  bg, esEgr?C.rojoOsc:C.azulOsc, 'c', null, 9),
+        cell(m.ab||'A',      true,  bg, C.negro,   'c'),
+        cell(m.cliente||m.detalle.slice(0,40), false, bg, C.negro, 'l', null, 9),
+        cell(m.cat,          false, bg, C.negro,   'l', null, 9),
+        cell(m.detalle,      false, bg, C.negro,   'l', null, 9),
+        cell(m.medio,        false, bg, C.negro,   'l', null, 9),
+        cell(m.cuenta,       false, bg, C.negro,   'l', null, 9),
+        cell(m.comp||'',     false, bg, C.negro,   'c', null, 9),
+        cell(m.moneda||'ARS',false, bg, C.negro,   'c', null, 9),
+        {v:m.monto, t:'n', s:{font:font(true,esEgr?C.rojoOsc:C.azulOsc,10),fill:fill(bg),alignment:alignR(),border:border(),numFmt:m.moneda==='USD'?fmtUSD_xl:fmtARS_xl}}
+      ]);
+    });
+    if(conTotales) {
+      const ing = lista.filter(m=>m.tipo==='ingreso');
+      const egr = lista.filter(m=>m.tipo==='egreso');
+      const tI  = ing.reduce((s,m)=>s+m.monto,0);
+      const tE  = egr.reduce((s,m)=>s+m.monto,0);
+      const net2 = tI-tE;
+      const emptyTotal = n => ({v:'',t:'s',s:{fill:fill(n),border:borderB()}});
+      aoa.push([{v:`TOTAL INGRESOS (${ing.length} mov.)`,t:'s',s:{font:font(true,C.blanco,10),fill:fill(C.azulOsc),alignment:alignR(),border:borderB()}},...Array(9).fill(emptyTotal(C.azulOsc)),cellTotal(tI,C.azulOsc,C.blanco)]);
+      aoa.push([{v:`TOTAL EGRESOS (${egr.length} mov.)`,t:'s', s:{font:font(true,C.blanco,10),fill:fill(C.rojoOsc),alignment:alignR(),border:borderB()}},...Array(9).fill(emptyTotal(C.rojoOsc)),cellTotal(tE,C.rojoOsc,C.blanco)]);
+      const netColor = net2>=0?C.verdeOsc:'C0392B';
+      aoa.push([{v:'RESULTADO NETO',t:'s',s:{font:font(true,C.blanco,11),fill:fill(netColor),alignment:alignR(),border:borderB()}},...Array(9).fill(emptyTotal(netColor)),cellTotal(net2,netColor,C.blanco)]);
+    }
+    return aoa;
+  }
+
+  // ── HOJA: Resumen ──
+  function makeResumen() {
+    const aoa = [];
+    aoa.push([{v:'CoWork Adrogué — '+titulo,t:'s',s:{font:font(true,C.blanco,14),fill:fill(C.azulOsc),alignment:alignC(),border:border()}},...Array(4).fill({v:'',t:'s',s:{fill:fill(C.azulOsc),border:border()}})]);
+    aoa.push([{v:'Período: '+periodo,t:'s',s:{font:font(false,C.blanco,9),fill:fill(C.azulMed),alignment:alignC(),border:border()}},...Array(4).fill({v:'',t:'s',s:{fill:fill(C.azulMed),border:border()}})]);
+    aoa.push(Array(5).fill({v:'',t:'s',s:{fill:fill('E8F4FD')}}));
+    const sumRows = [
+      ['Ingresos ARS',  tIngARS,  C.azulOsc,  C.azulClar,  fmtARS_xl],
+      ['Ingresos USD',  tIngUSD,  C.ambar,    C.ambarClar, fmtUSD_xl],
+      ['Egresos ARS',   tEgr,     C.rojoOsc,  C.rojoClar,  fmtARS_xl],
+      ['Resultado neto ARS', neto, neto>=0?C.verdeOsc:'C0392B', neto>=0?C.verdeClar:C.rojoClar, fmtARS_xl],
+    ];
+    sumRows.forEach(([lbl,val,color,bg,fmt]) => {
+      aoa.push([
+        {v:lbl,t:'s',s:{font:font(true,color,10),fill:fill(bg),alignment:alignL(),border:border()}},
+        {v:'',t:'s',s:{fill:fill(bg),border:border()}},
+        {v:'',t:'s',s:{fill:fill(bg),border:border()}},
+        {v:val,t:'n',s:{font:font(true,color,11),fill:fill(bg),alignment:alignR(),border:border(),numFmt:fmt}},
+        {v:'',t:'s',s:{fill:fill(bg),border:border()}}
+      ]);
+    });
+    aoa.push(Array(5).fill({v:'',t:'s',s:{fill:fill(C.blanco)}}));
+    // Por categoría
+    aoa.push([{v:'Ingresos por categoría',t:'s',s:{font:font(true,C.blanco,10),fill:fill(C.azulHead),alignment:alignC(),border:border()}},...Array(4).fill({v:'',t:'s',s:{fill:fill(C.azulHead),border:border()}})]);
+    const cats = {};
+    ingresos.forEach(m=>{cats[m.cat]=(cats[m.cat]||0)+m.monto;});
+    Object.entries(cats).sort((a,b)=>b[1]-a[1]).forEach(([cat,monto],i) => {
+      const bg = i%2===0?C.blanco:C.gris;
+      aoa.push([
+        {v:cat,t:'s',s:{font:font(false,C.negro,10),fill:fill(bg),alignment:alignL(),border:border()}},
+        {v:'',t:'s',s:{fill:fill(bg),border:border()}},
+        {v:'',t:'s',s:{fill:fill(bg),border:border()}},
+        {v:monto,t:'n',s:{font:font(true,C.azulOsc,10),fill:fill(bg),alignment:alignR(),border:border(),numFmt:fmtARS_xl}},
+        {v:'',t:'s',s:{fill:fill(bg),border:border()}}
+      ]);
+    });
+    return aoa;
+  }
+
+  function addSheet(name, aoa, merges, colWidths, freeze) {
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    if(merges)   ws['!merges'] = merges;
+    if(colWidths) ws['!cols']  = colWidths.map(w=>({wch:w}));
+    if(freeze)   ws['!freeze'] = freeze;
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  }
+
+  const allMov = [...lista].sort((a,b)=>b.fecha.localeCompare(a.fecha));
+
+  // Resumen
+  addSheet('Resumen', makeResumen(),
+    [{s:{r:0,c:0},e:{r:0,c:4}},{s:{r:1,c:0},e:{r:1,c:4}},{s:{r:2,c:0},e:{r:2,c:4}},{s:{r:8,c:0},e:{r:8,c:4}}],
+    [22,12,12,18,4]);
+
+  // Movimientos (carga contable)
+  const aoaAll = makeMovSheet(allMov, true);
+  addSheet('Movimientos (carga contable)', aoaAll,
+    [{s:{r:0,c:0},e:{r:0,c:10}},{s:{r:1,c:0},e:{r:1,c:10}}],
+    [12,9,5,28,16,36,14,16,12,8,14],
+    {xSplit:0,ySplit:3,topLeftCell:'A4'});
+
+  // Ingresos
+  const aoaIng = makeMovSheet(ingresos, false);
+  // fila total al final
+  const tI2=ingresos.reduce((s,m)=>s+m.monto,0);
+  aoaIng.push([{v:`TOTAL  (${ingresos.length} movimientos)`,t:'s',s:{font:font(true,C.blanco,10),fill:fill(C.azulOsc),alignment:alignR(),border:borderB()}},...Array(9).fill({v:'',t:'s',s:{fill:fill(C.azulOsc),border:borderB()}}),cellTotal(tI2,C.azulOsc,C.blanco)]);
+  addSheet('Ingresos', aoaIng,
+    [{s:{r:0,c:0},e:{r:0,c:10}},{s:{r:1,c:0},e:{r:1,c:10}}],
+    [12,9,5,28,16,36,14,16,12,8,14],
+    {xSplit:0,ySplit:3,topLeftCell:'A4'});
+
+  // Egresos
+  const aoaEgr = makeMovSheet(egresos, false);
+  const tE2=egresos.reduce((s,m)=>s+m.monto,0);
+  aoaEgr.push([{v:`TOTAL  (${egresos.length} movimientos)`,t:'s',s:{font:font(true,C.blanco,10),fill:fill(C.rojoOsc),alignment:alignR(),border:borderB()}},...Array(9).fill({v:'',t:'s',s:{fill:fill(C.rojoOsc),border:borderB()}}),cellTotal(tE2,C.rojoOsc,C.blanco)]);
+  addSheet('Egresos', aoaEgr,
+    [{s:{r:0,c:0},e:{r:0,c:10}},{s:{r:1,c:0},e:{r:1,c:10}}],
+    [12,9,5,28,16,36,14,16,12,8,14],
+    {xSplit:0,ySplit:3,topLeftCell:'A4'});
+
+  // Descargar
+  XLSX.writeFile(wb, nombreArchivo);
 }
 
 function toCSV(lista, titulo, subtitulo) {
@@ -1039,7 +1218,7 @@ function genDia() {
   let l = movs.filter(m=>m.fecha===f);
   if (t!=='todos') l = l.filter(m=>m.tipo===t);
   if (!l.length) { alert('Sin movimientos para esa fecha.'); return; }
-  dlCSV(toCSV(l, 'Reporte ' + f, 'Fecha: ' + f), 'reporte_' + f + '.csv');
+  exportarXLSX(l, 'Reporte ' + f, 'Fecha: ' + f, 'reporte_' + f + '.xlsx');
 }
 
 function genMes() {
@@ -1050,7 +1229,7 @@ function genMes() {
   if (!l.length) { alert('Sin movimientos para ese mes.'); return; }
   const [y,mo] = mes.split('-');
   const nombre = new Date(y, mo-1).toLocaleString('es-AR',{month:'long',year:'numeric'});
-  dlCSV(toCSV(l, 'Reporte ' + nombre, 'Período: ' + nombre), 'reporte_' + mes + '.csv');
+  exportarXLSX(l, 'Reporte ' + nombre, 'Período: ' + nombre, 'reporte_' + mes + '.xlsx');
 }
 
 function genCustom() {
@@ -1062,7 +1241,7 @@ function genCustom() {
   if (t!=='todos') l = l.filter(m=>m.tipo===t);
   if (ab!=='todos') l = l.filter(m=>m.ab===ab);
   if (!l.length) { alert('Sin movimientos para ese rango.'); return; }
-  dlCSV(toCSV(l, 'Reporte ' + desde + ' – ' + hasta, desde + ' → ' + hasta), 'reporte_' + desde + '_' + hasta + '.csv');
+  exportarXLSX(l, 'Reporte ' + desde + ' – ' + hasta, desde + ' → ' + hasta, 'reporte_' + desde + '_' + hasta + '.xlsx');
 }
 
 /* ── IMPORTAR ── */
